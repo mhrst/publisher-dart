@@ -53,9 +53,15 @@ final class _AndroidCommand {
       defaultsTo: _defaultAndroidPackageName,
       help: 'Google Play package name.',
     )
+    ..addOption('oauth-client', help: 'Path to the Google OAuth client JSON.')
     ..addOption(
-      'service-account',
-      help: 'Path to the Google Play service-account JSON.',
+      'oauth-token',
+      help: 'Path to the cached Google OAuth token JSON.',
+    )
+    ..addOption(
+      'oauth-port',
+      defaultsTo: '0',
+      help: 'Localhost callback port for first-time OAuth consent.',
     )
     ..addOption('track', defaultsTo: 'internal')
     ..addOption(
@@ -84,6 +90,11 @@ final class _AndroidCommand {
       help: 'Read release notes from stdin.',
     )
     ..addFlag('allow-dirty', negatable: false)
+    ..addFlag(
+      'force-oauth-consent',
+      negatable: false,
+      help: 'Ignore the cached token and run the browser consent flow.',
+    )
     ..addFlag('skip-build', negatable: false)
     ..addFlag('skip-upload', negatable: false)
     ..addFlag('skip-git', negatable: false)
@@ -143,18 +154,33 @@ final class _AndroidCommand {
     }
 
     if (!args.flag('skip-upload')) {
-      final serviceAccountPath =
-          args.option('service-account') ??
-          context.androidServiceAccountFile.path;
+      final oauthClientPath = _optionOrEnv(
+        args,
+        'oauth-client',
+        'GOOGLE_PLAY_OAUTH_CLIENT',
+        context.androidOAuthClientFile.path,
+      );
+      final oauthTokenPath = _optionOrEnv(
+        args,
+        'oauth-token',
+        'GOOGLE_PLAY_OAUTH_TOKEN',
+        context.androidOAuthTokenFile.path,
+      );
       if (dryRun) {
         releaseNotes?.forGooglePlay();
         stdout.writeln(
           'Would upload ${context.androidReleaseBundle.path} to '
-          '${args.option('track')} using $serviceAccountPath.',
+          '${args.option('track')} using OAuth client $oauthClientPath '
+          'and token cache $oauthTokenPath.',
         );
       } else {
         final versionCode = await AndroidInternalPublisher(
-          serviceAccountFile: File(serviceAccountPath),
+          oauthCredentials: AndroidUserOAuthCredentials(
+            clientSecretsFile: File(oauthClientPath),
+            tokenStoreFile: File(oauthTokenPath),
+            listenPort: _nonNegativeInt(args.option('oauth-port')!),
+            forceConsent: args.flag('force-oauth-consent'),
+          ),
           appBundleFile: context.androidReleaseBundle,
           packageName: args.option('package-name')!,
           trackName: args.option('track')!,
@@ -205,6 +231,31 @@ final class _AndroidCommand {
     }
     return ReleaseNotes.fromValue(args.option('whats-new')) ??
         await ReleaseNotes.fromFile(args.option('notes-file'));
+  }
+
+  String _optionOrEnv(
+    ArgResults args,
+    String option,
+    String envName,
+    String defaultValue,
+  ) {
+    final value = args.option(option)?.trim();
+    if (value != null && value.isNotEmpty) {
+      return value;
+    }
+    final envValue = Platform.environment[envName]?.trim();
+    if (envValue != null && envValue.isNotEmpty) {
+      return envValue;
+    }
+    return defaultValue;
+  }
+
+  int _nonNegativeInt(String value) {
+    final parsed = int.tryParse(value);
+    if (parsed == null || parsed < 0) {
+      throw FormatException('Expected a non-negative integer.', value);
+    }
+    return parsed;
   }
 
   AppVersion _nextVersion(AppVersion current, VersionBump bump) {

@@ -28,12 +28,24 @@ make deploy_internal_ios ARGS='--whats-new "Internal test build"'
 ## Android
 
 Android uses the Google Play Developer API directly through `googleapis` and
-`googleapis_auth`. Defaults match the old internal lane:
+`googleapis_auth`. Authentication uses an installed-app OAuth client and a
+cached user refresh token, not a service-account JSON. Defaults match the old
+internal lane where they still apply:
 
 - package name: `com.workpail.inkpad.notepad.notes`
 - track: `internal`
-- service-account JSON: `../_secrets/inkpadnotepad-39534ebaf0b6.json`
+- OAuth client JSON: `../_secrets/google-play-oauth-client.json`
+- cached OAuth token: `../_secrets/google-play-oauth-token.json`
 - git tag prefix: `internal/android/v`
+
+The first upload opens a browser consent flow and writes the token cache.
+Later uploads refresh that token automatically. The signed-in Google account
+must have Google Play Console access for the app.
+
+OAuth paths can also be passed with options or env:
+
+- `--oauth-client` or `GOOGLE_PLAY_OAUTH_CLIENT`
+- `--oauth-token` or `GOOGLE_PLAY_OAUTH_TOKEN`
 
 Useful options:
 

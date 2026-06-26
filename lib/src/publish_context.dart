@@ -14,8 +14,12 @@ final class PublishContext {
   Directory get iosDirectory => Directory(p.join(appDirectory.path, 'ios'));
   Directory get parentDirectory => appDirectory.parent;
 
-  File get androidServiceAccountFile => File(
-    p.join(parentDirectory.path, '_secrets', 'inkpadnotepad-39534ebaf0b6.json'),
+  File get androidOAuthClientFile => File(
+    p.join(parentDirectory.path, '_secrets', 'google-play-oauth-client.json'),
+  );
+
+  File get androidOAuthTokenFile => File(
+    p.join(parentDirectory.path, '_secrets', 'google-play-oauth-token.json'),
   );
 
   File get androidReleaseBundle => File(

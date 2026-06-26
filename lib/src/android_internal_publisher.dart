@@ -1,19 +1,25 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
+import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:googleapis/androidpublisher/v3.dart';
 import 'package:googleapis_auth/auth_io.dart';
+import 'package:http/http.dart' as http;
 import 'package:publisher_dart/src/app_version.dart';
 import 'package:publisher_dart/src/release_notes.dart';
 
 final class AndroidInternalPublisher {
-  final File serviceAccountFile;
+  final AndroidUserOAuthCredentials oauthCredentials;
   final File appBundleFile;
   final String packageName;
   final String trackName;
   final void Function(String line) log;
 
   const AndroidInternalPublisher({
-    required this.serviceAccountFile,
+    required this.oauthCredentials,
     required this.appBundleFile,
     required this.packageName,
     this.trackName = 'internal',
@@ -24,15 +30,11 @@ final class AndroidInternalPublisher {
     required AppVersion version,
     ReleaseNotes? releaseNotes,
   }) async {
-    _requireFile(serviceAccountFile, 'Google Play service-account JSON');
     _requireFile(appBundleFile, 'Android app bundle');
 
-    final credentials = ServiceAccountCredentials.fromJson(
-      serviceAccountFile.readAsStringSync(),
+    final client = await oauthCredentials.createClient(
+      scopes: const [AndroidPublisherApi.androidpublisherScope],
     );
-    final client = await clientViaServiceAccount(credentials, const [
-      AndroidPublisherApi.androidpublisherScope,
-    ]);
 
     try {
       final api = AndroidPublisherApi(client);
@@ -94,5 +96,272 @@ final class AndroidInternalPublisher {
     if (!file.existsSync()) {
       throw FileSystemException('Missing $label.', file.path);
     }
+  }
+}
+
+final class AndroidUserOAuthCredentials {
+  final File clientSecretsFile;
+  final File tokenStoreFile;
+  final int listenPort;
+  final bool forceConsent;
+  final void Function(String line) log;
+
+  const AndroidUserOAuthCredentials({
+    required this.clientSecretsFile,
+    required this.tokenStoreFile,
+    this.listenPort = 0,
+    this.forceConsent = false,
+    this.log = print,
+  });
+
+  Future<AutoRefreshingAuthClient> createClient({
+    required List<String> scopes,
+  }) async {
+    _requireFile(clientSecretsFile, 'Google OAuth client JSON');
+
+    final clientId = GoogleOAuthClientId.fromJson(
+      _readJsonObject(clientSecretsFile),
+    ).toClientId();
+    final baseClient = http.Client();
+
+    try {
+      final credentials = await _credentials(
+        clientId: clientId,
+        scopes: scopes,
+        baseClient: baseClient,
+      );
+      final client = autoRefreshingClient(clientId, credentials, baseClient);
+      client.credentialUpdates.listen(_writeCredentials);
+      return client;
+    } catch (_) {
+      baseClient.close();
+      rethrow;
+    }
+  }
+
+  Future<AccessCredentials> _credentials({
+    required ClientId clientId,
+    required List<String> scopes,
+    required http.Client baseClient,
+  }) async {
+    if (!forceConsent && tokenStoreFile.existsSync()) {
+      final credentials = AccessCredentials.fromJson(
+        _readJsonObject(tokenStoreFile),
+      );
+      if (credentials.refreshToken != null &&
+          _coversScopes(credentials.scopes, scopes)) {
+        log('Using cached Google OAuth token ${tokenStoreFile.path}.');
+        return credentials;
+      }
+      log(
+        'Cached Google OAuth token is missing a refresh token or does not '
+        'cover the requested scopes; '
+        'requesting consent again.',
+      );
+    }
+
+    log('Requesting Google OAuth consent for Google Play publishing.');
+    final credentials = await _obtainOfflineAccessCredentials(
+      clientId,
+      scopes,
+      baseClient,
+    );
+    if (credentials.refreshToken == null) {
+      throw StateError(
+        'Google OAuth did not return a refresh token. Revoke the existing '
+        'grant for this OAuth client and rerun with --force-oauth-consent.',
+      );
+    }
+    _writeCredentials(credentials);
+    return credentials;
+  }
+
+  Future<AccessCredentials> _obtainOfflineAccessCredentials(
+    ClientId clientId,
+    List<String> scopes,
+    http.Client baseClient,
+  ) async {
+    final server = await HttpServer.bind('localhost', listenPort);
+
+    try {
+      final redirectUri = 'http://localhost:${server.port}';
+      final state = _randomState();
+      final codeVerifier = _createCodeVerifier();
+      final authorizationUri = _authorizationUri(
+        clientId: clientId,
+        scopes: scopes,
+        redirectUri: redirectUri,
+        state: state,
+        codeVerifier: codeVerifier,
+      );
+
+      _promptUserForConsent(authorizationUri.toString());
+
+      final request = await server.first;
+      try {
+        if (request.method != 'GET') {
+          throw StateError('Invalid OAuth callback method: ${request.method}.');
+        }
+        if (request.uri.queryParameters['state'] != state) {
+          throw StateError('Invalid OAuth callback state.');
+        }
+        final error = request.uri.queryParameters['error'];
+        if (error != null) {
+          throw StateError('Google OAuth failed: $error.');
+        }
+        final code = request.uri.queryParameters['code'];
+        if (code == null || code.isEmpty) {
+          throw StateError('Google OAuth callback did not include a code.');
+        }
+
+        final credentials = await obtainAccessCredentialsViaCodeExchange(
+          baseClient,
+          clientId,
+          code,
+          redirectUrl: redirectUri,
+          codeVerifier: codeVerifier,
+        );
+
+        request.response
+          ..statusCode = 200
+          ..headers.set('content-type', 'text/html; charset=UTF-8')
+          ..write('''
+<!DOCTYPE html>
+<html>
+  <head><meta charset="utf-8"><title>Authorization successful</title></head>
+  <body><h2>Authorization successful. You can close this window.</h2></body>
+</html>
+''');
+        await request.response.close();
+        return credentials;
+      } catch (_) {
+        request.response.statusCode = 500;
+        await request.response.close().catchError((_) {});
+        rethrow;
+      }
+    } finally {
+      await server.close();
+    }
+  }
+
+  void _promptUserForConsent(String uri) {
+    log('Authorize Google Play publishing in your browser:');
+    log(uri);
+
+    if (Platform.isMacOS) {
+      unawaited(() async {
+        try {
+          await Process.start('open', [uri], mode: ProcessStartMode.detached);
+        } on ProcessException catch (error) {
+          log('Could not open the browser automatically: ${error.message}');
+        }
+      }());
+    }
+  }
+
+  void _writeCredentials(AccessCredentials credentials) {
+    tokenStoreFile.parent.createSync(recursive: true);
+    const encoder = JsonEncoder.withIndent('  ');
+    tokenStoreFile.writeAsStringSync(
+      '${encoder.convert(credentials.toJson())}\n',
+    );
+    log('Saved Google OAuth token ${tokenStoreFile.path}.');
+  }
+
+  bool _coversScopes(List<String> actualScopes, List<String> requiredScopes) {
+    final actual = actualScopes.toSet();
+    return requiredScopes.every(actual.contains);
+  }
+
+  Uri _authorizationUri({
+    required ClientId clientId,
+    required List<String> scopes,
+    required String redirectUri,
+    required String state,
+    required String codeVerifier,
+  }) {
+    return Uri.https('accounts.google.com', 'o/oauth2/v2/auth', {
+      'client_id': clientId.identifier,
+      'response_type': 'code',
+      'redirect_uri': redirectUri,
+      'scope': scopes.join(' '),
+      'code_challenge': _codeChallenge(codeVerifier),
+      'code_challenge_method': 'S256',
+      'access_type': 'offline',
+      'prompt': 'consent',
+      'state': state,
+    });
+  }
+
+  String _createCodeVerifier() {
+    const safe =
+        '0123456789-._~'
+        'abcdefghijklmnopqrstuvwxyz'
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    final random = Random.secure();
+    return List.generate(128, (_) => safe[random.nextInt(safe.length)]).join();
+  }
+
+  String _codeChallenge(String codeVerifier) {
+    final digest = sha256.convert(ascii.encode(codeVerifier));
+    return _stripBase64Padding(base64UrlEncode(digest.bytes));
+  }
+
+  String _randomState() {
+    final random = Random.secure();
+    final bytes = Uint8List.fromList([
+      for (var i = 0; i < 24; i++) random.nextInt(256),
+    ]);
+    return _stripBase64Padding(base64UrlEncode(bytes));
+  }
+
+  String _stripBase64Padding(String value) {
+    return value.replaceAll(RegExp(r'=+$'), '');
+  }
+
+  Map<String, dynamic> _readJsonObject(File file) {
+    final decoded = jsonDecode(file.readAsStringSync());
+    if (decoded is Map<String, dynamic>) {
+      return decoded;
+    }
+    throw FormatException('Expected a JSON object.', decoded);
+  }
+
+  void _requireFile(File file, String label) {
+    if (!file.existsSync()) {
+      throw FileSystemException('Missing $label.', file.path);
+    }
+  }
+}
+
+final class GoogleOAuthClientId {
+  final String identifier;
+  final String? secret;
+
+  const GoogleOAuthClientId({required this.identifier, this.secret});
+
+  factory GoogleOAuthClientId.fromJson(Map<String, dynamic> json) {
+    final googleConfig = json['installed'] ?? json['web'];
+    if (googleConfig is Map<String, dynamic>) {
+      return GoogleOAuthClientId(
+        identifier: _requiredString(googleConfig, 'client_id'),
+        secret: googleConfig['client_secret'] as String?,
+      );
+    }
+
+    return GoogleOAuthClientId(
+      identifier: _requiredString(json, 'identifier'),
+      secret: json['secret'] as String?,
+    );
+  }
+
+  ClientId toClientId() => ClientId(identifier, secret);
+
+  static String _requiredString(Map<String, dynamic> json, String key) {
+    final value = json[key];
+    if (value is String && value.isNotEmpty) {
+      return value;
+    }
+    throw FormatException('Expected "$key" to be a non-empty string.', json);
   }
 }
