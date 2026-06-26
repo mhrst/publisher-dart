@@ -6,8 +6,8 @@ The package is intended to replace the internal Fastlane lanes while keeping
 the release flow explicit:
 
 - bump the Flutter build number in `inkpad_app/pubspec.yaml`
-- build the Android AAB or iOS IPA
-- upload to Google Play internal testing or TestFlight
+- build the Android AAB or iOS archive
+- upload to Google Play internal testing or App Store Connect
 - optionally attach "what's new" / release notes
 - commit the version bump and create a matching git tag
 
@@ -65,10 +65,14 @@ The upload path intentionally does not require App Store Connect API keys,
 Transporter JWTs, or app-specific passwords. First make sure Xcode can see the
 right account under Xcode > Settings > Accounts.
 
-When release notes are supplied, the script validates the TestFlight length and
-saves them to `.dart_tool/publisher_dart/testflight_whats_new.txt`. Local Xcode
-authentication does not expose an official metadata API for setting TestFlight
-what's-new text automatically.
+Uploaded builds are App Store distribution eligible and are not submitted for
+review. App Store Connect/TestFlight can still make the processed build
+available to internal testers according to the app's configured tester groups.
+
+When release notes are supplied, the script validates the App Store length and
+saves them to `.dart_tool/publisher_dart/app_store_whats_new.txt`. Local Xcode
+authentication uploads the build but does not expose an official metadata API
+for updating App Store Connect draft metadata automatically.
 
 ```sh
 dart ../../publisher-dart/tool/publish_internal_ios.dart \

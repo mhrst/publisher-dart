@@ -93,11 +93,11 @@ final class IosInternalPublisher {
     ], workingDirectory: context.iosDirectory.path);
   }
 
-  Future<File> writeTestFlightNotes(String whatsNew) async {
+  Future<File> writeAppStoreDraftNotes(String whatsNew) async {
     final directory = Directory(
       p.join(context.appDirectory.path, '.dart_tool', 'publisher_dart'),
     );
-    final file = File(p.join(directory.path, 'testflight_whats_new.txt'));
+    final file = File(p.join(directory.path, 'app_store_whats_new.txt'));
 
     if (runner.dryRun) {
       runner.log('Would write ${file.path}');
@@ -229,8 +229,6 @@ final class IosInternalPublisher {
 \t<key>manageAppVersionAndBuildNumber</key>
 \t<false/>
 \t<key>uploadSymbols</key>
-\t<true/>
-\t<key>testFlightInternalTestingOnly</key>
 \t<true/>
 \t<key>destination</key>
 \t<string>${destination.value}</string>

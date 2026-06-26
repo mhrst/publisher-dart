@@ -10,13 +10,15 @@ const _defaultTeamId = 'TUPCVWUMEF';
 const _defaultTagPrefix = 'internal/ios/v';
 
 const _usageHeader = '''
-Publishes an Inkpad iOS build to TestFlight internal testing.
+Publishes an Inkpad iOS build to App Store Connect.
 
 Run from inkpad-app/inkpad_app:
   dart ../../publisher-dart/tool/publish_internal_ios.dart [options]
 
 Authentication uses the Apple Developer account already installed in Xcode.
 The account must have signing and App Store Connect upload access for Inkpad.
+The uploaded build remains eligible for App Store distribution, but the script
+does not submit it for review.
 ''';
 
 Future<void> main(List<String> args) async {
@@ -68,12 +70,12 @@ final class _IosCommand {
     ..addOption(
       'whats-new',
       aliases: ['release-notes'],
-      help: 'TestFlight what\'s-new text.',
+      help: 'App Store what\'s-new text to save with the upload.',
     )
     ..addOption(
       'notes-file',
       aliases: ['release-notes-file'],
-      help: 'File containing TestFlight what\'s-new text.',
+      help: 'File containing App Store what\'s-new text.',
     )
     ..addOption(
       'tag-prefix',
@@ -88,7 +90,12 @@ final class _IosCommand {
     ..addFlag('allow-dirty', negatable: false)
     ..addFlag('skip-build', negatable: false)
     ..addFlag('skip-upload', negatable: false)
-    ..addFlag('skip-testflight-notes', negatable: false)
+    ..addFlag(
+      'skip-app-store-notes',
+      aliases: ['skip-testflight-notes'],
+      negatable: false,
+      help: 'Skip saving App Store what\'s-new text.',
+    )
     ..addFlag('skip-crashlytics-symbols', negatable: false)
     ..addFlag('skip-git', negatable: false)
     ..addFlag(
@@ -135,7 +142,7 @@ final class _IosCommand {
     }
 
     final releaseNotes = await _resolveReleaseNotes(args);
-    final whatsNew = releaseNotes?.forTestFlight();
+    final whatsNew = releaseNotes?.forAppStoreVersion();
     final publisher = IosInternalPublisher(
       context: context,
       runner: runner,
@@ -166,13 +173,13 @@ final class _IosCommand {
         await publisher.uploadCrashlyticsSymbols();
       }
 
-      if (whatsNew != null && !args.flag('skip-testflight-notes')) {
-        final notesFile = await publisher.writeTestFlightNotes(whatsNew);
+      if (whatsNew != null && !args.flag('skip-app-store-notes')) {
+        final notesFile = await publisher.writeAppStoreDraftNotes(whatsNew);
         final action = dryRun ? 'Would save' : 'Saved';
         stdout.writeln(
-          '$action TestFlight release notes to ${notesFile.path}. Local Apple '
-          'authentication does not expose an official metadata API for setting '
-          'them automatically.',
+          '$action App Store draft release notes to ${notesFile.path}. Local '
+          'Apple authentication uploads the build but does not update App '
+          'Store Connect draft metadata automatically.',
         );
       }
 

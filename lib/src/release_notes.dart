@@ -36,13 +36,17 @@ final class ReleaseNotes {
     );
   }
 
-  String forTestFlight({int maxLength = 4000}) {
+  String forAppStoreVersion({int maxLength = 4000}) {
     if (value.length <= maxLength) {
       return value;
     }
     throw FormatException(
-      'TestFlight what\'s-new text must be $maxLength characters or fewer.',
+      'App Store what\'s-new text must be $maxLength characters or fewer.',
       value,
     );
+  }
+
+  String forTestFlight({int maxLength = 4000}) {
+    return forAppStoreVersion(maxLength: maxLength);
   }
 }

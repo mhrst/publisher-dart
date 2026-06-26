@@ -17,4 +17,10 @@ void main() {
 
     expect(() => notes.forGooglePlay(), throwsFormatException);
   });
+
+  test('rejects App Store notes over the limit', () {
+    final notes = ReleaseNotes.fromValue('x' * 4001)!;
+
+    expect(() => notes.forAppStoreVersion(), throwsFormatException);
+  });
 }
