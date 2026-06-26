@@ -59,20 +59,35 @@ dart ../../publisher-dart/tool/publish_internal_android.dart \
 
 iOS builds an App Store Connect archive and uploads it with `xcodebuild` using
 the Apple Developer account already installed in Xcode. The account must have
-signing and App Store Connect upload access for Inkpad.
-
-The upload path intentionally does not require App Store Connect API keys,
-Transporter JWTs, or app-specific passwords. First make sure Xcode can see the
-right account under Xcode > Settings > Accounts.
+signing and App Store Connect upload access for Inkpad. First make sure Xcode
+can see the right account under Xcode > Settings > Accounts.
 
 Uploaded builds are App Store distribution eligible and are not submitted for
 review. App Store Connect/TestFlight can still make the processed build
 available to internal testers according to the app's configured tester groups.
 
-When release notes are supplied, the script validates the App Store length and
-saves them to `.dart_tool/publisher_dart/app_store_whats_new.txt`. Local Xcode
-authentication uploads the build but does not expose an official metadata API
-for updating App Store Connect draft metadata automatically.
+After upload, the script uses the App Store Connect API to wait for the build
+to process, attach it to the matching App Store version draft, and optionally
+update the draft's localized what's-new text. The script does not submit the
+draft for review.
+
+Draft metadata authentication uses a local App Store Connect API key. An
+individual API key is recommended because it uses the developer's own App Store
+Connect access and does not need an issuer ID. By default, the private key is
+read from `../_secrets/app-store-connect-api-key.p8`.
+
+Required metadata credentials:
+
+- `--app-store-key-id` or `APP_STORE_CONNECT_KEY_ID`
+- `--app-store-private-key` or `APP_STORE_CONNECT_PRIVATE_KEY`
+
+Optional metadata settings:
+
+- `--app-store-issuer-id` or `APP_STORE_CONNECT_ISSUER_ID` for a team API key
+- `--app-store-app-id` or `APP_STORE_APP_ID`; otherwise the app is found by
+  bundle ID
+- `--bundle-id` or `APP_STORE_BUNDLE_ID`; defaults to `com.workpail.InkPad`
+- `--metadata-locale` or `APP_STORE_CONNECT_LOCALE`; defaults to `en-US`
 
 ```sh
 dart ../../publisher-dart/tool/publish_internal_ios.dart \

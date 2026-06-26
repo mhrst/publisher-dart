@@ -93,22 +93,6 @@ final class IosInternalPublisher {
     ], workingDirectory: context.iosDirectory.path);
   }
 
-  Future<File> writeAppStoreDraftNotes(String whatsNew) async {
-    final directory = Directory(
-      p.join(context.appDirectory.path, '.dart_tool', 'publisher_dart'),
-    );
-    final file = File(p.join(directory.path, 'app_store_whats_new.txt'));
-
-    if (runner.dryRun) {
-      runner.log('Would write ${file.path}');
-      return file;
-    }
-
-    await directory.create(recursive: true);
-    await file.writeAsString('$whatsNew\n');
-    return file;
-  }
-
   Future<void> uploadCrashlyticsSymbols() async {
     final dsymDirectory = Directory(p.join(archiveDirectory.path, 'dSYMs'));
 

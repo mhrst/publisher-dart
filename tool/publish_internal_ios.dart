@@ -8,6 +8,10 @@ import 'package:publisher_dart/publisher_dart.dart';
 
 const _defaultTeamId = 'TUPCVWUMEF';
 const _defaultTagPrefix = 'internal/ios/v';
+const _defaultBundleId = 'com.workpail.InkPad';
+const _defaultMetadataLocale = 'en-US';
+const _defaultBuildPollTimeoutSeconds = '1800';
+const _defaultBuildPollIntervalSeconds = '30';
 
 const _usageHeader = '''
 Publishes an Inkpad iOS build to App Store Connect.
@@ -19,6 +23,8 @@ Authentication uses the Apple Developer account already installed in Xcode.
 The account must have signing and App Store Connect upload access for Inkpad.
 The uploaded build remains eligible for App Store distribution, but the script
 does not submit it for review.
+
+Draft metadata uses an App Store Connect individual API key stored locally.
 ''';
 
 Future<void> main(List<String> args) async {
@@ -59,6 +65,51 @@ final class _IosCommand {
       help: 'Apple Developer team ID.',
     )
     ..addOption(
+      'bundle-id',
+      help:
+          'App Store Connect bundle ID used to discover the app. Defaults to '
+          'com.workpail.InkPad or APP_STORE_BUNDLE_ID.',
+    )
+    ..addOption(
+      'app-store-app-id',
+      help:
+          'App Store Connect app resource ID. Defaults to lookup by '
+          '--bundle-id or APP_STORE_APP_ID.',
+    )
+    ..addOption(
+      'app-store-key-id',
+      help: 'App Store Connect API key ID or APP_STORE_CONNECT_KEY_ID.',
+    )
+    ..addOption(
+      'app-store-private-key',
+      help:
+          'Path to the App Store Connect API .p8 key. Defaults to '
+          '../_secrets/app-store-connect-api-key.p8 or '
+          'APP_STORE_CONNECT_PRIVATE_KEY.',
+    )
+    ..addOption(
+      'app-store-issuer-id',
+      help:
+          'Optional issuer ID for a team API key. Omit for an individual API '
+          'key, or set APP_STORE_CONNECT_ISSUER_ID.',
+    )
+    ..addOption(
+      'metadata-locale',
+      help:
+          'App Store version localization to update. Defaults to en-US or '
+          'APP_STORE_CONNECT_LOCALE.',
+    )
+    ..addOption(
+      'build-poll-timeout',
+      defaultsTo: _defaultBuildPollTimeoutSeconds,
+      help: 'Seconds to wait for App Store Connect build processing.',
+    )
+    ..addOption(
+      'build-poll-interval',
+      defaultsTo: _defaultBuildPollIntervalSeconds,
+      help: 'Seconds between App Store Connect build processing checks.',
+    )
+    ..addOption(
       'archive',
       help: 'Existing .xcarchive directory to use with --skip-build.',
     )
@@ -70,7 +121,7 @@ final class _IosCommand {
     ..addOption(
       'whats-new',
       aliases: ['release-notes'],
-      help: 'App Store what\'s-new text to save with the upload.',
+      help: 'App Store what\'s-new text for the draft metadata update.',
     )
     ..addOption(
       'notes-file',
@@ -91,10 +142,15 @@ final class _IosCommand {
     ..addFlag('skip-build', negatable: false)
     ..addFlag('skip-upload', negatable: false)
     ..addFlag(
+      'skip-app-store-metadata',
+      negatable: false,
+      help: 'Skip App Store Connect draft build linking and metadata update.',
+    )
+    ..addFlag(
       'skip-app-store-notes',
       aliases: ['skip-testflight-notes'],
       negatable: false,
-      help: 'Skip saving App Store what\'s-new text.',
+      help: 'Skip updating App Store what\'s-new text.',
     )
     ..addFlag('skip-crashlytics-symbols', negatable: false)
     ..addFlag('skip-git', negatable: false)
@@ -173,13 +229,13 @@ final class _IosCommand {
         await publisher.uploadCrashlyticsSymbols();
       }
 
-      if (whatsNew != null && !args.flag('skip-app-store-notes')) {
-        final notesFile = await publisher.writeAppStoreDraftNotes(whatsNew);
-        final action = dryRun ? 'Would save' : 'Saved';
-        stdout.writeln(
-          '$action App Store draft release notes to ${notesFile.path}. Local '
-          'Apple authentication uploads the build but does not update App '
-          'Store Connect draft metadata automatically.',
+      if (!args.flag('skip-app-store-metadata')) {
+        await _updateAppStoreDraft(
+          args: args,
+          context: context,
+          version: nextVersion,
+          whatsNew: args.flag('skip-app-store-notes') ? null : whatsNew,
+          dryRun: dryRun,
         );
       }
 
@@ -245,6 +301,137 @@ final class _IosCommand {
       VersionBump.minor => current.bumpMinor(),
       VersionBump.major => current.bumpMajor(),
     };
+  }
+
+  Future<void> _updateAppStoreDraft({
+    required ArgResults args,
+    required PublishContext context,
+    required AppVersion version,
+    required String? whatsNew,
+    required bool dryRun,
+  }) async {
+    final appId = _optionOrEnv(args, 'app-store-app-id', 'APP_STORE_APP_ID');
+    final bundleId =
+        _optionOrEnv(args, 'bundle-id', 'APP_STORE_BUNDLE_ID') ??
+        _defaultBundleId;
+    final locale =
+        _optionOrEnv(args, 'metadata-locale', 'APP_STORE_CONNECT_LOCALE') ??
+        _defaultMetadataLocale;
+    final buildPollTimeout = _durationOption(args, 'build-poll-timeout');
+    final buildPollInterval = _durationOption(args, 'build-poll-interval');
+
+    if (dryRun) {
+      stdout.writeln(
+        'Would update App Store Connect draft metadata for '
+        '${appId == null ? 'bundle ID $bundleId' : 'app $appId'}.',
+      );
+      stdout.writeln(
+        'Would wait up to ${buildPollTimeout.inSeconds}s for build '
+        '${version.buildNumber} (${version.buildName}) to process.',
+      );
+      stdout.writeln(
+        'Would attach the processed build to App Store version '
+        '${version.buildName}.',
+      );
+      if (whatsNew != null) {
+        stdout.writeln('Would update $locale App Store what\'s-new metadata.');
+      }
+      return;
+    }
+
+    final client = AppStoreConnectClient(
+      tokenProvider: _appStoreConnectCredentials(args, context),
+    );
+    try {
+      final result = await client.updateDraftSubmission(
+        appId: appId,
+        bundleId: bundleId,
+        version: version,
+        whatsNew: whatsNew,
+        locale: locale,
+        buildPollTimeout: buildPollTimeout,
+        buildPollInterval: buildPollInterval,
+      );
+      stdout.writeln(
+        'Updated App Store draft ${result.appStoreVersionId} with build '
+        '${result.buildId}.',
+      );
+      if (result.localizationId != null) {
+        stdout.writeln(
+          'Updated $locale App Store what\'s-new metadata '
+          '(${result.localizationId}).',
+        );
+      }
+    } finally {
+      client.close();
+    }
+  }
+
+  AppStoreConnectCredentials _appStoreConnectCredentials(
+    ArgResults args,
+    PublishContext context,
+  ) {
+    return AppStoreConnectCredentials(
+      keyId: _requiredOptionOrEnv(
+        args,
+        'app-store-key-id',
+        'APP_STORE_CONNECT_KEY_ID',
+      ),
+      privateKeyFile: _appStorePrivateKeyFile(args, context),
+      issuerId: _optionOrEnv(
+        args,
+        'app-store-issuer-id',
+        'APP_STORE_CONNECT_ISSUER_ID',
+      ),
+    );
+  }
+
+  File _appStorePrivateKeyFile(ArgResults args, PublishContext context) {
+    final path = _optionOrEnv(
+      args,
+      'app-store-private-key',
+      'APP_STORE_CONNECT_PRIVATE_KEY',
+    );
+    if (path == null) {
+      return context.iosAppStoreConnectPrivateKeyFile;
+    }
+    return File(path).absolute;
+  }
+
+  Duration _durationOption(ArgResults args, String option) {
+    final value = args.option(option)!;
+    final seconds = int.tryParse(value);
+    if (seconds == null || seconds <= 0) {
+      throw _UsageError(
+        '--$option must be a positive integer number of seconds.',
+        _usage,
+      );
+    }
+    return Duration(seconds: seconds);
+  }
+
+  String _requiredOptionOrEnv(
+    ArgResults args,
+    String option,
+    String environmentKey,
+  ) {
+    final value = _optionOrEnv(args, option, environmentKey);
+    if (value == null) {
+      throw _UsageError('Missing --$option or $environmentKey.', _usage);
+    }
+    return value;
+  }
+
+  String? _optionOrEnv(ArgResults args, String option, String environmentKey) {
+    final optionValue = args.option(option)?.trim();
+    if (optionValue != null && optionValue.isNotEmpty) {
+      return optionValue;
+    }
+    final environmentValue = Platform.environment[environmentKey]?.trim();
+    if (environmentValue != null && environmentValue.isNotEmpty) {
+      return environmentValue;
+    }
+    return null;
   }
 }
 

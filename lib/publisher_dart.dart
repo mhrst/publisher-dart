@@ -1,4 +1,5 @@
 export 'src/android_internal_publisher.dart';
+export 'src/app_store_connect_client.dart';
 export 'src/app_version.dart';
 export 'src/git_client.dart';
 export 'src/ios_internal_publisher.dart';

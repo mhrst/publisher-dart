@@ -44,6 +44,10 @@ final class PublishContext {
     p.join(iosDirectory.path, 'Pods', 'FirebaseCrashlytics', 'upload-symbols'),
   );
 
+  File get iosAppStoreConnectPrivateKeyFile => File(
+    p.join(parentDirectory.path, '_secrets', 'app-store-connect-api-key.p8'),
+  );
+
   Directory get iosArchiveDirectory => Directory(
     p.join(appDirectory.path, 'build', 'ios', 'archive', 'Runner.xcarchive'),
   );
