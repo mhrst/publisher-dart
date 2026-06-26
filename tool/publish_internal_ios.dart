@@ -1,6 +1,5 @@
 #!/usr/bin/env dart
 
-import 'dart:async';
 import 'dart:io';
 
 import 'package:args/args.dart';
@@ -9,9 +8,6 @@ import 'package:publisher_dart/publisher_dart.dart';
 
 const _defaultTeamId = 'TUPCVWUMEF';
 const _defaultTagPrefix = 'internal/ios/v';
-const _defaultLocale = 'en-US';
-const _defaultProcessingTimeoutSeconds = 1800;
-const _defaultPollIntervalSeconds = 30;
 
 const _usageHeader = '''
 Publishes an Inkpad iOS build to TestFlight internal testing.
@@ -19,11 +15,8 @@ Publishes an Inkpad iOS build to TestFlight internal testing.
 Run from inkpad-app/inkpad_app:
   dart ../../publisher-dart/tool/publish_internal_ios.dart [options]
 
-Required App Store Connect auth options may also be provided with:
-  APP_STORE_CONNECT_KEY_ID
-  APP_STORE_CONNECT_ISSUER_ID
-  APP_STORE_CONNECT_PRIVATE_KEY_PATH
-  APP_STORE_CONNECT_APP_ID
+Authentication uses the Apple Developer account already installed in Xcode.
+The account must have signing and App Store Connect upload access for Inkpad.
 ''';
 
 Future<void> main(List<String> args) async {
@@ -49,9 +42,6 @@ Future<void> main(List<String> args) async {
   } on ProcessException catch (error) {
     stderr.writeln(error);
     exitCode = error.errorCode == 0 ? 1 : error.errorCode;
-  } on TimeoutException catch (error) {
-    stderr.writeln(error.message);
-    exitCode = 1;
   } on StateError catch (error) {
     stderr.writeln(error.message);
     exitCode = 1;
@@ -66,28 +56,10 @@ final class _IosCommand {
       defaultsTo: _defaultTeamId,
       help: 'Apple Developer team ID.',
     )
-    ..addOption('api-key-id', help: 'App Store Connect API key ID.')
-    ..addOption('api-issuer-id', help: 'App Store Connect issuer ID.')
     ..addOption(
-      'api-private-key',
-      help: 'Path to the App Store Connect .p8 private key.',
+      'archive',
+      help: 'Existing .xcarchive directory to use with --skip-build.',
     )
-    ..addOption(
-      'app-store-app-id',
-      help: 'Numeric App Store Connect app ID, required for release notes.',
-    )
-    ..addOption(
-      'upload-tool',
-      defaultsTo: 'transporter',
-      allowed: ['transporter', 'altool'],
-      help: 'Tool used to upload the IPA.',
-    )
-    ..addOption(
-      'transporter-verbosity',
-      defaultsTo: 'informational',
-      help: 'Transporter verbosity passed to -v.',
-    )
-    ..addOption('ipa', help: 'Use an existing IPA when --skip-build is passed.')
     ..addOption(
       'bump',
       defaultsTo: 'build',
@@ -102,21 +74,6 @@ final class _IosCommand {
       'notes-file',
       aliases: ['release-notes-file'],
       help: 'File containing TestFlight what\'s-new text.',
-    )
-    ..addOption(
-      'locale',
-      defaultsTo: _defaultLocale,
-      help: 'Beta build localization locale.',
-    )
-    ..addOption(
-      'processing-timeout-seconds',
-      defaultsTo: '$_defaultProcessingTimeoutSeconds',
-      help: 'How long to wait for App Store Connect build processing.',
-    )
-    ..addOption(
-      'poll-interval-seconds',
-      defaultsTo: '$_defaultPollIntervalSeconds',
-      help: 'How often to poll App Store Connect build processing.',
     )
     ..addOption(
       'tag-prefix',
@@ -154,6 +111,7 @@ final class _IosCommand {
     final context = PublishContext(
       appDirectory: Directory(args.option('app-dir')!),
     );
+    final archiveDirectory = _archiveDirectory(args, context);
     final git = GitClient(
       repositoryDirectory: context.parentDirectory.path,
       runner: runner,
@@ -178,28 +136,30 @@ final class _IosCommand {
 
     final releaseNotes = await _resolveReleaseNotes(args);
     final whatsNew = releaseNotes?.forTestFlight();
-    final credentials = _credentials(args, dryRun: dryRun);
     final publisher = IosInternalPublisher(
       context: context,
       runner: runner,
-      credentials: credentials,
       teamId: args.option('team-id')!,
-      uploadTool: IosUploadTool.parse(args.option('upload-tool')!),
-      transporterVerbosity: args.option('transporter-verbosity')!,
+      archiveDirectory: archiveDirectory,
     );
 
-    final ipaFile = args.flag('skip-build')
-        ? _resolveExistingIpa(args, context, dryRun: dryRun)
-        : await publisher.buildIpa(version: nextVersion);
+    if (!args.flag('skip-build')) {
+      await publisher.buildArchive(version: nextVersion);
+    } else if (!dryRun && !archiveDirectory.existsSync()) {
+      throw FileSystemException(
+        'Missing iOS archive directory. Pass --archive or run without --skip-build.',
+        archiveDirectory.path,
+      );
+    }
 
     if (!args.flag('skip-upload')) {
       if (dryRun) {
         stdout.writeln(
-          'Would upload ${ipaFile.path} using ${args.option('upload-tool')}.',
+          'Would upload ${archiveDirectory.path} using the local Xcode account.',
         );
       } else {
-        await publisher.uploadIpa(ipaFile: ipaFile);
-        stdout.writeln('Uploaded iOS IPA ${ipaFile.path}.');
+        await publisher.uploadArchive();
+        stdout.writeln('Uploaded iOS archive ${archiveDirectory.path}.');
       }
 
       if (!args.flag('skip-crashlytics-symbols') && !args.flag('skip-build')) {
@@ -207,12 +167,12 @@ final class _IosCommand {
       }
 
       if (whatsNew != null && !args.flag('skip-testflight-notes')) {
-        await _publishTestFlightNotes(
-          args,
-          credentials,
-          version: nextVersion,
-          whatsNew: whatsNew,
-          dryRun: dryRun,
+        final notesFile = await publisher.writeTestFlightNotes(whatsNew);
+        final action = dryRun ? 'Would save' : 'Saved';
+        stdout.writeln(
+          '$action TestFlight release notes to ${notesFile.path}. Local Apple '
+          'authentication does not expose an official metadata API for setting '
+          'them automatically.',
         );
       }
 
@@ -235,104 +195,20 @@ final class _IosCommand {
         }
       }
     } else {
-      stdout.writeln('Skipped upload; skipped git commit/tag.');
+      final ipaFile = await publisher.exportIpa();
+      stdout.writeln('Skipped upload; exported iOS IPA ${ipaFile.path}.');
+      stdout.writeln('Skipped git commit/tag.');
     }
   }
 
   String get _usage => '$_usageHeader\n${_parser.usage}';
 
-  AppStoreConnectCredentials _credentials(
-    ArgResults args, {
-    required bool dryRun,
-  }) {
-    final keyId = _optionOrEnv(args, 'api-key-id', 'APP_STORE_CONNECT_KEY_ID');
-    final issuerId = _optionOrEnv(
-      args,
-      'api-issuer-id',
-      'APP_STORE_CONNECT_ISSUER_ID',
-    );
-    final privateKeyPath = _optionOrEnv(
-      args,
-      'api-private-key',
-      'APP_STORE_CONNECT_PRIVATE_KEY_PATH',
-    );
-    final privateKeyFile = File(privateKeyPath);
-
-    if (!dryRun && !privateKeyFile.existsSync()) {
-      throw FileSystemException(
-        'Missing App Store Connect private key.',
-        privateKeyFile.path,
-      );
+  Directory _archiveDirectory(ArgResults args, PublishContext context) {
+    final archivePath = args.option('archive')?.trim();
+    if (archivePath != null && archivePath.isNotEmpty) {
+      return Directory(archivePath).absolute;
     }
-
-    return AppStoreConnectCredentials(
-      keyId: keyId,
-      issuerId: issuerId,
-      privateKeyFile: privateKeyFile,
-    );
-  }
-
-  Future<void> _publishTestFlightNotes(
-    ArgResults args,
-    AppStoreConnectCredentials credentials, {
-    required AppVersion version,
-    required String whatsNew,
-    required bool dryRun,
-  }) async {
-    final appId = _optionOrEnv(
-      args,
-      'app-store-app-id',
-      'APP_STORE_CONNECT_APP_ID',
-    );
-    final timeout = Duration(
-      seconds: _positiveInt(args.option('processing-timeout-seconds')!),
-    );
-    final pollInterval = Duration(
-      seconds: _positiveInt(args.option('poll-interval-seconds')!),
-    );
-
-    if (dryRun) {
-      stdout.writeln(
-        'Would wait for TestFlight build processing and set '
-        '${args.option('locale')} release notes for app $appId.',
-      );
-      return;
-    }
-
-    final client = AppStoreConnectClient(credentials: credentials);
-    try {
-      final buildId = await client.waitForProcessedBuildId(
-        appId: appId,
-        version: version,
-        timeout: timeout,
-        pollInterval: pollInterval,
-        log: stdout.writeln,
-      );
-      await client.upsertBetaBuildLocalization(
-        buildId: buildId,
-        locale: args.option('locale')!,
-        whatsNew: whatsNew,
-      );
-      stdout.writeln('Updated TestFlight release notes for build $buildId.');
-    } finally {
-      client.close();
-    }
-  }
-
-  File _resolveExistingIpa(
-    ArgResults args,
-    PublishContext context, {
-    required bool dryRun,
-  }) {
-    final ipaPath = args.option('ipa');
-    final ipaFile = File(ipaPath ?? context.defaultIosIpaFile.path);
-    if (!dryRun && !ipaFile.existsSync()) {
-      throw FileSystemException(
-        'Missing IPA file. Pass --ipa or run without --skip-build.',
-        ipaFile.path,
-      );
-    }
-    return ipaFile;
+    return context.iosArchiveDirectory;
   }
 
   Future<ReleaseNotes?> _resolveReleaseNotes(ArgResults args) async {
@@ -353,26 +229,6 @@ final class _IosCommand {
     }
     return ReleaseNotes.fromValue(args.option('whats-new')) ??
         await ReleaseNotes.fromFile(args.option('notes-file'));
-  }
-
-  String _optionOrEnv(ArgResults args, String option, String envName) {
-    final value = args.option(option)?.trim();
-    if (value != null && value.isNotEmpty) {
-      return value;
-    }
-    final envValue = Platform.environment[envName]?.trim();
-    if (envValue != null && envValue.isNotEmpty) {
-      return envValue;
-    }
-    throw _UsageError('Missing --$option or $envName.', _usage);
-  }
-
-  int _positiveInt(String value) {
-    final parsed = int.tryParse(value);
-    if (parsed == null || parsed <= 0) {
-      throw FormatException('Expected a positive integer.', value);
-    }
-    return parsed;
   }
 
   AppVersion _nextVersion(AppVersion current, VersionBump bump) {

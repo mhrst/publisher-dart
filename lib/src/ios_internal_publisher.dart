@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
-import 'package:publisher_dart/src/app_store_connect_auth.dart';
 import 'package:publisher_dart/src/app_version.dart';
 import 'package:publisher_dart/src/process_runner.dart';
 import 'package:publisher_dart/src/publish_context.dart';
@@ -9,21 +8,18 @@ import 'package:publisher_dart/src/publish_context.dart';
 final class IosInternalPublisher {
   final PublishContext context;
   final ProcessRunner runner;
-  final AppStoreConnectCredentials credentials;
   final String teamId;
-  final IosUploadTool uploadTool;
-  final String transporterVerbosity;
+  final Directory archiveDirectory;
 
-  const IosInternalPublisher({
+  IosInternalPublisher({
     required this.context,
     required this.runner,
-    required this.credentials,
     required this.teamId,
-    this.uploadTool = IosUploadTool.transporter,
-    this.transporterVerbosity = 'informational',
-  });
+    Directory? archiveDirectory,
+  }) : archiveDirectory =
+           (archiveDirectory ?? context.iosArchiveDirectory).absolute;
 
-  Future<File> buildIpa({required AppVersion version}) async {
+  Future<void> buildArchive({required AppVersion version}) async {
     await _cleanFlutterNativeAssetOutputs();
 
     await runner.run('flutter', [
@@ -37,8 +33,6 @@ final class IosInternalPublisher {
       version.buildNumber.toString(),
     ], workingDirectory: context.appDirectory.path);
 
-    final exportOptionsPlist = await _writeExportOptionsPlist();
-
     await runner.run('xcodebuild', [
       '-workspace',
       'Runner.xcworkspace',
@@ -49,29 +43,27 @@ final class IosInternalPublisher {
       '-destination',
       'generic/platform=iOS',
       '-archivePath',
-      context.iosArchiveDirectory.path,
+      archiveDirectory.path,
       '-allowProvisioningUpdates',
-      '-authenticationKeyPath',
-      credentials.privateKeyFile.absolute.path,
-      '-authenticationKeyID',
-      credentials.keyId,
-      '-authenticationKeyIssuerID',
-      credentials.issuerId,
       'FLUTTER_BUILD_NAME=${version.buildName}',
       'FLUTTER_BUILD_NUMBER=${version.buildNumber}',
       'archive',
     ], workingDirectory: context.iosDirectory.path);
 
     await _verifyAppStoreNativeAssets();
+  }
 
+  Future<File> exportIpa() async {
     await runner.run('xcodebuild', [
       '-exportArchive',
       '-archivePath',
-      context.iosArchiveDirectory.path,
+      archiveDirectory.path,
       '-exportPath',
       context.iosIpaDirectory.path,
       '-exportOptionsPlist',
-      exportOptionsPlist.path,
+      (await _writeExportOptionsPlist(
+        destination: XcodeArchiveDestination.export,
+      )).path,
     ], workingDirectory: context.iosDirectory.path);
 
     if (runner.dryRun) {
@@ -80,56 +72,45 @@ final class IosInternalPublisher {
     return _findIpaFile();
   }
 
-  Future<void> uploadIpa({required File ipaFile}) async {
-    switch (uploadTool) {
-      case IosUploadTool.transporter:
-        final jwt = await credentials.createJwt();
-        await runner.run(
-          'xcrun',
-          [
-            'iTMSTransporter',
-            '-m',
-            'upload',
-            '-jwt',
-            jwt,
-            '-v',
-            transporterVerbosity,
-            '-assetFile',
-            ipaFile.path,
-          ],
-          displayArguments: [
-            'iTMSTransporter',
-            '-m',
-            'upload',
-            '-jwt',
-            '<redacted>',
-            '-v',
-            transporterVerbosity,
-            '-assetFile',
-            ipaFile.path,
-          ],
-          workingDirectory: context.appDirectory.path,
-        );
-      case IosUploadTool.altool:
-        await runner.run('xcrun', [
-          'altool',
-          '--upload-app',
-          '-f',
-          ipaFile.path,
-          '-t',
-          'ios',
-          '--apiKey',
-          credentials.keyId,
-          '--apiIssuer',
-          credentials.issuerId,
-        ], workingDirectory: context.appDirectory.path);
+  Future<void> uploadArchive() async {
+    if (!runner.dryRun && !archiveDirectory.existsSync()) {
+      throw FileSystemException(
+        'Missing iOS archive directory.',
+        archiveDirectory.path,
+      );
     }
+
+    await runner.run('xcodebuild', [
+      '-exportArchive',
+      '-archivePath',
+      archiveDirectory.path,
+      '-exportPath',
+      context.iosIpaDirectory.path,
+      '-exportOptionsPlist',
+      (await _writeExportOptionsPlist(
+        destination: XcodeArchiveDestination.upload,
+      )).path,
+    ], workingDirectory: context.iosDirectory.path);
+  }
+
+  Future<File> writeTestFlightNotes(String whatsNew) async {
+    final directory = Directory(
+      p.join(context.appDirectory.path, '.dart_tool', 'publisher_dart'),
+    );
+    final file = File(p.join(directory.path, 'testflight_whats_new.txt'));
+
+    if (runner.dryRun) {
+      runner.log('Would write ${file.path}');
+      return file;
+    }
+
+    await directory.create(recursive: true);
+    await file.writeAsString('$whatsNew\n');
+    return file;
   }
 
   Future<void> uploadCrashlyticsSymbols() async {
-    final dsymDirectory = Directory(
-      p.join(context.iosArchiveDirectory.path, 'dSYMs'),
-    );
+    final dsymDirectory = Directory(p.join(archiveDirectory.path, 'dSYMs'));
 
     if (!runner.dryRun) {
       if (!context.iosCrashlyticsUploadSymbols.existsSync()) {
@@ -218,11 +199,15 @@ final class IosInternalPublisher {
     }
   }
 
-  Future<File> _writeExportOptionsPlist() async {
+  Future<File> _writeExportOptionsPlist({
+    required XcodeArchiveDestination destination,
+  }) async {
     final directory = Directory(
       p.join(context.appDirectory.path, '.dart_tool', 'publisher_dart'),
     );
-    final file = File(p.join(directory.path, 'ExportOptions.plist'));
+    final file = File(
+      p.join(directory.path, 'ExportOptions-${destination.value}.plist'),
+    );
 
     if (runner.dryRun) {
       runner.log('Would write ${file.path}');
@@ -248,7 +233,7 @@ final class IosInternalPublisher {
 \t<key>testFlightInternalTestingOnly</key>
 \t<true/>
 \t<key>destination</key>
-\t<string>export</string>
+\t<string>${destination.value}</string>
 </dict>
 </plist>
 ''');
@@ -262,7 +247,7 @@ final class IosInternalPublisher {
     }
 
     final applicationsDirectory = Directory(
-      p.join(context.iosArchiveDirectory.path, 'Products', 'Applications'),
+      p.join(archiveDirectory.path, 'Products', 'Applications'),
     );
     if (!applicationsDirectory.existsSync()) {
       return;
@@ -341,18 +326,11 @@ final class IosInternalPublisher {
   }
 }
 
-enum IosUploadTool {
-  transporter,
-  altool;
+enum XcodeArchiveDestination {
+  export('export'),
+  upload('upload');
 
-  static IosUploadTool parse(String value) {
-    return switch (value) {
-      'transporter' => IosUploadTool.transporter,
-      'altool' => IosUploadTool.altool,
-      _ => throw FormatException(
-        'Expected one of: transporter, altool.',
-        value,
-      ),
-    };
-  }
+  final String value;
+
+  const XcodeArchiveDestination(this.value);
 }

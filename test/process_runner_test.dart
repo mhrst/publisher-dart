@@ -9,13 +9,13 @@ void main() {
       final runner = ProcessRunner(dryRun: true, log: lines.add);
 
       await runner.run(
-        'xcrun',
-        const ['iTMSTransporter', '-jwt', 'real-token'],
-        displayArguments: const ['iTMSTransporter', '-jwt', '<redacted>'],
+        'tool',
+        const ['upload', '--token', 'real-token'],
+        displayArguments: const ['upload', '--token', '<redacted>'],
         workingDirectory: '.',
       );
 
-      expect(lines, [r"$ xcrun iTMSTransporter -jwt '<redacted>'"]);
+      expect(lines, [r"$ tool upload --token '<redacted>'"]);
     },
   );
 }

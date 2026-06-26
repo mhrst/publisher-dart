@@ -57,20 +57,18 @@ dart ../../publisher-dart/tool/publish_internal_android.dart \
 
 ## iOS
 
-iOS builds an App Store Connect export, uploads the IPA with Transporter by
-default, then optionally waits for TestFlight processing and writes the
-what's-new text through the App Store Connect API.
+iOS builds an App Store Connect archive and uploads it with `xcodebuild` using
+the Apple Developer account already installed in Xcode. The account must have
+signing and App Store Connect upload access for Inkpad.
 
-Required App Store Connect authentication can be passed with options or env:
+The upload path intentionally does not require App Store Connect API keys,
+Transporter JWTs, or app-specific passwords. First make sure Xcode can see the
+right account under Xcode > Settings > Accounts.
 
-- `--api-key-id` or `APP_STORE_CONNECT_KEY_ID`
-- `--api-issuer-id` or `APP_STORE_CONNECT_ISSUER_ID`
-- `--api-private-key` or `APP_STORE_CONNECT_PRIVATE_KEY_PATH`
-- `--app-store-app-id` or `APP_STORE_CONNECT_APP_ID` when release notes are used
-
-Transporter is the default uploader. `--upload-tool altool` is available as a
-fallback, but it depends on Apple's deprecated `altool` behavior and local key
-configuration.
+When release notes are supplied, the script validates the TestFlight length and
+saves them to `.dart_tool/publisher_dart/testflight_whats_new.txt`. Local Xcode
+authentication does not expose an official metadata API for setting TestFlight
+what's-new text automatically.
 
 ```sh
 dart ../../publisher-dart/tool/publish_internal_ios.dart \
