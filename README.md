@@ -9,7 +9,7 @@ the release flow explicit:
 - build the Android AAB or iOS archive
 - upload to Google Play internal testing or App Store Connect
 - optionally attach "what's new" / release notes
-- commit the version bump and create a matching git tag
+- leave the bumped version in the app worktree for manual commit/tagging
 
 The scripts are designed to run from `inkpad-app/inkpad_app`.
 
@@ -33,17 +33,19 @@ iOS.
 Before either platform:
 
 - make sure Flutter dependencies are installed and the app builds locally
-- start from a clean `inkpad-app` worktree unless using `--allow-dirty` or
-  `--skip-git`
-- decide whether to push immediately; `--push` pushes the generated commit and
-  tag, while omitting it leaves them local
 - prepare release notes with `--whats-new`, `--notes-file`, or
   `--stdin-release-notes`, if needed
+- decide when you want to manually commit and tag the bumped version
+
+The scripts do not create commits or tags. If you want a separate commit/tag for
+each platform build, commit and tag manually after Android before starting iOS.
+If you run both first, the iOS script will bump from Android's new version and
+only the final iOS version remains in `pubspec.yaml`.
 
 Each publisher increments the Flutter version before publishing. A fresh
 Android-then-iOS run creates two consecutive build numbers. For example, if the
-app starts at `6.5.0+6501`, Android publishes and tags `6.5.0+6502`, then iOS
-publishes and tags `6.5.0+6503`.
+app starts at `6.5.0+6501`, Android publishes `6.5.0+6502`, then iOS publishes
+`6.5.0+6503`.
 
 ### 1. Android
 
@@ -63,19 +65,20 @@ Prerequisites:
 Fresh run:
 
 ```sh
-make deploy_internal_android ARGS='--whats-new "Internal test build" --push'
+make deploy_internal_android ARGS='--whats-new "Internal test build"'
 ```
 
 What to expect the first time:
 
-1. The script validates git state, reads `pubspec.yaml`, and bumps the version.
+1. The script reads `pubspec.yaml` and bumps the version.
 2. Flutter builds the release Android App Bundle.
 3. A browser OAuth consent flow opens. Sign in with the Google account that has
    Play Console access. The script stores the refresh token in the token cache.
 4. The AAB uploads to the Google Play internal track with the release notes, if
    provided.
-5. The script commits the version bump and creates an `internal/android/v...`
-   tag. With `--push`, it pushes the commit and tag.
+5. The bumped `pubspec.yaml` remains in the app worktree. Commit and tag it
+   manually before running iOS if you want the Android build recorded
+   separately.
 
 Later Android runs reuse the cached OAuth token. If Google does not return a
 refresh token during setup, rerun with `--force-oauth-consent`.
@@ -97,12 +100,12 @@ Prerequisites:
 Fresh run:
 
 ```sh
-make deploy_internal_ios ARGS='--whats-new "Internal test build" --push'
+make deploy_internal_ios ARGS='--whats-new "Internal test build"'
 ```
 
 What to expect the first time:
 
-1. The script validates git state, reads `pubspec.yaml`, and bumps the version.
+1. The script reads `pubspec.yaml` and bumps the version.
 2. Flutter prepares the iOS project, then `xcodebuild` archives and uploads with
    the Apple account installed in Xcode. Xcode or macOS may prompt for account,
    signing, or keychain access.
@@ -112,8 +115,8 @@ What to expect the first time:
 5. The script uses the App Store Connect API key to find the app, wait for build
    processing, attach the build to the matching App Store version draft, and
    update localized what's-new text when provided.
-6. The script commits the version bump and creates an `internal/ios/v...` tag.
-   With `--push`, it pushes the commit and tag.
+6. The bumped `pubspec.yaml` remains in the app worktree. Commit and tag it
+   manually after verifying the upload.
 
 Internal tester availability is controlled by the app's App Store Connect and
 TestFlight configuration. The script uploads and updates draft metadata, but it
@@ -130,7 +133,6 @@ internal lane where they still apply:
 - track: `internal`
 - OAuth client JSON: `../_secrets/google-play-oauth-client.json`
 - cached OAuth token: `../_secrets/google-play-oauth-token.json`
-- git tag prefix: `internal/android/v`
 
 The first upload opens a browser consent flow and writes the token cache.
 Later uploads refresh that token automatically. The signed-in Google account
@@ -145,8 +147,7 @@ Useful options:
 
 ```sh
 dart ../../publisher-dart/tool/publish_internal_android.dart \
-  --whats-new "Internal test build" \
-  --push
+  --whats-new "Internal test build"
 ```
 
 ## iOS
@@ -185,8 +186,7 @@ Optional metadata settings:
 
 ```sh
 dart ../../publisher-dart/tool/publish_internal_ios.dart \
-  --whats-new "Internal test build" \
-  --push
+  --whats-new "Internal test build"
 ```
 
 ## Safety switches
@@ -196,6 +196,4 @@ Both scripts support:
 - `--dry-run`
 - `--skip-build`
 - `--skip-upload`
-- `--skip-git`
-- `--allow-dirty`
 - `--bump build|patch|minor|major`

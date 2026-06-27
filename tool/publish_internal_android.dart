@@ -3,11 +3,9 @@
 import 'dart:io';
 
 import 'package:args/args.dart';
-import 'package:path/path.dart' as p;
 import 'package:publisher_dart/publisher_dart.dart';
 
 const _defaultAndroidPackageName = 'com.workpail.inkpad.notepad.notes';
-const _defaultTagPrefix = 'internal/android/v';
 
 const _usageHeader = '''
 Publishes an Inkpad Android build to Google Play internal testing.
@@ -79,17 +77,11 @@ final class _AndroidCommand {
       aliases: ['release-notes-file'],
       help: 'File containing release notes / what\'s-new text.',
     )
-    ..addOption(
-      'tag-prefix',
-      defaultsTo: _defaultTagPrefix,
-      help: 'Git tag prefix. The bumped version is appended.',
-    )
     ..addFlag(
       'stdin-release-notes',
       negatable: false,
       help: 'Read release notes from stdin.',
     )
-    ..addFlag('allow-dirty', negatable: false)
     ..addFlag(
       'force-oauth-consent',
       negatable: false,
@@ -97,12 +89,6 @@ final class _AndroidCommand {
     )
     ..addFlag('skip-build', negatable: false)
     ..addFlag('skip-upload', negatable: false)
-    ..addFlag('skip-git', negatable: false)
-    ..addFlag(
-      'push',
-      negatable: false,
-      help: 'Push commit and tag after tagging.',
-    )
     ..addFlag('dry-run', negatable: false)
     ..addFlag('help', abbr: 'h', negatable: false);
 
@@ -118,15 +104,6 @@ final class _AndroidCommand {
     final context = PublishContext(
       appDirectory: Directory(args.option('app-dir')!),
     );
-    final git = GitClient(
-      repositoryDirectory: context.parentDirectory.path,
-      runner: runner,
-    );
-
-    final skipGit = args.flag('skip-git');
-    if (!skipGit) {
-      await git.requireClean(allowDirty: args.flag('allow-dirty'));
-    }
 
     final versionFile = VersionFile(context.pubspecFile);
     final bump = VersionBump.parse(args.option('bump')!);
@@ -187,27 +164,8 @@ final class _AndroidCommand {
         ).publish(version: nextVersion, releaseNotes: releaseNotes);
         stdout.writeln('Uploaded Android version code $versionCode.');
       }
-
-      if (!skipGit) {
-        final tagName = '${args.option('tag-prefix')}$nextVersion';
-        await git.commitVersion(
-          pubspecPath: p.relative(
-            context.pubspecFile.path,
-            from: context.parentDirectory.path,
-          ),
-          version: nextVersion.toString(),
-        );
-        await git.tag(
-          tagName: tagName,
-          version: nextVersion.toString(),
-          platform: 'Android',
-        );
-        if (args.flag('push')) {
-          await git.push(tagName: tagName);
-        }
-      }
     } else {
-      stdout.writeln('Skipped upload; skipped git commit/tag.');
+      stdout.writeln('Skipped upload.');
     }
   }
 
