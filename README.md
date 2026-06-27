@@ -83,6 +83,10 @@ What to expect the first time:
 Later Android runs reuse the cached OAuth token. If Google does not return a
 refresh token during setup, rerun with `--force-oauth-consent`.
 
+Android release notes are committed as part of the same Google Play edit that
+assigns the uploaded AAB to the internal track. If that edit fails before
+commit, fix the issue and rerun the Android publisher.
+
 ### 2. iOS
 
 Prerequisites:
@@ -121,6 +125,18 @@ What to expect the first time:
 Internal tester availability is controlled by the app's App Store Connect and
 TestFlight configuration. The script uploads and updates draft metadata, but it
 does not submit the app for review.
+
+If the upload succeeds but App Store Connect draft metadata or what's-new update
+fails, retry only that step:
+
+```sh
+make deploy_internal_ios ARGS='--only-app-store-metadata --whats-new "Internal test build"'
+```
+
+That retry reads the current `pubspec.yaml` version, waits for the already
+uploaded App Store eligible build, attaches it to the matching App Store version
+draft, and updates localized what's-new text when provided. It does not build,
+upload, export an IPA, or upload Crashlytics symbols.
 
 ## Android
 
@@ -235,6 +251,14 @@ dart ../../publisher-dart/tool/publish_internal_ios.dart \
   --whats-new "Internal test build"
 ```
 
+Retry only App Store draft metadata after a successful upload:
+
+```sh
+dart ../../publisher-dart/tool/publish_internal_ios.dart \
+  --only-app-store-metadata \
+  --whats-new "Internal test build"
+```
+
 Reference docs:
 
 - Google Play Developer API setup:
@@ -253,3 +277,7 @@ Both scripts support:
 - `--dry-run`
 - `--skip-build`
 - `--skip-upload`
+
+iOS also supports:
+
+- `--only-app-store-metadata`

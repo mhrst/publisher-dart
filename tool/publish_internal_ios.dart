@@ -129,6 +129,13 @@ final class _IosCommand {
     ..addFlag('skip-build', negatable: false)
     ..addFlag('skip-upload', negatable: false)
     ..addFlag(
+      'only-app-store-metadata',
+      negatable: false,
+      help:
+          'Only update App Store Connect draft build linkage and metadata for '
+          'the current pubspec.yaml version.',
+    )
+    ..addFlag(
       'skip-app-store-metadata',
       negatable: false,
       help: 'Skip App Store Connect draft build linking and metadata update.',
@@ -149,19 +156,32 @@ final class _IosCommand {
       stdout.writeln(_usage);
       return;
     }
+    _validateMode(args);
 
     final dryRun = args.flag('dry-run');
     final runner = ProcessRunner(dryRun: dryRun);
     final context = PublishContext(
       appDirectory: Directory(args.option('app-dir')!),
     );
-    final archiveDirectory = _archiveDirectory(args, context);
 
     final version = VersionFile(context.pubspecFile).read();
     stdout.writeln('Using app version $version.');
 
     final releaseNotes = await _resolveReleaseNotes(args);
     final whatsNew = releaseNotes?.forAppStoreVersion();
+
+    if (args.flag('only-app-store-metadata')) {
+      await _updateAppStoreDraft(
+        args: args,
+        context: context,
+        version: version,
+        whatsNew: args.flag('skip-app-store-notes') ? null : whatsNew,
+        dryRun: dryRun,
+      );
+      return;
+    }
+
+    final archiveDirectory = _archiveDirectory(args, context);
     final publisher = IosInternalPublisher(
       context: context,
       runner: runner,
@@ -208,6 +228,17 @@ final class _IosCommand {
   }
 
   String get _usage => '$_usageHeader\n${_parser.usage}';
+
+  void _validateMode(ArgResults args) {
+    if (args.flag('only-app-store-metadata') &&
+        args.flag('skip-app-store-metadata')) {
+      throw _UsageError(
+        'Use either --only-app-store-metadata or --skip-app-store-metadata, '
+        'not both.',
+        _usage,
+      );
+    }
+  }
 
   Directory _archiveDirectory(ArgResults args, PublishContext context) {
     final archivePath = args.option('archive')?.trim();
