@@ -143,6 +143,24 @@ OAuth paths can also be passed with options or env:
 - `--oauth-client` or `GOOGLE_PLAY_OAUTH_CLIENT`
 - `--oauth-token` or `GOOGLE_PLAY_OAUTH_TOKEN`
 
+Where to get Android values:
+
+- `package-name`: the Android application ID / Google Play package name. This
+  defaults to `com.workpail.inkpad.notepad.notes`.
+- `track`: the Google Play testing track API name. Internal testing is
+  `internal`.
+- `--oauth-client` / `GOOGLE_PLAY_OAUTH_CLIENT`: use the Google Cloud project
+  connected to Google Play Console API access, enable the Google Play Android
+  Developer API, then go to Google Cloud Console > APIs & Services >
+  Credentials > Create credentials > OAuth client ID > Desktop app. Download
+  the client JSON and save it as
+  `../_secrets/google-play-oauth-client.json`, or pass its path.
+- `--oauth-token` / `GOOGLE_PLAY_OAUTH_TOKEN`: choose a local path for the
+  cached user token. The script creates this file after the first browser
+  consent flow; it is not downloaded from Google.
+- browser sign-in account: use the Google account that has Play Console access
+  to the Inkpad app and permission to publish to the internal track.
+
 Useful options:
 
 ```sh
@@ -184,10 +202,49 @@ Optional metadata settings:
 - `--bundle-id` or `APP_STORE_BUNDLE_ID`; defaults to `com.workpail.InkPad`
 - `--metadata-locale` or `APP_STORE_CONNECT_LOCALE`; defaults to `en-US`
 
+Where to get iOS values:
+
+- Xcode account: sign in at Xcode > Settings > Accounts with the Apple
+  Developer account that can sign and upload Inkpad.
+- `--team-id`: the Apple Developer Team ID. Find it in the Apple Developer
+  account membership details or in Xcode's account/team details. The default is
+  `TUPCVWUMEF`.
+- `--app-store-key-id` / `APP_STORE_CONNECT_KEY_ID`: in App Store Connect, open
+  your account profile / Edit Profile and create an Individual API Key. The key
+  ID is shown with the generated key. For a team key, use App Store Connect >
+  Users and Access > Integrations > App Store Connect API.
+- `--app-store-private-key` / `APP_STORE_CONNECT_PRIVATE_KEY`: the local path
+  to the `.p8` private key downloaded when creating the App Store Connect API
+  key. Apple only allows the private key to be downloaded at creation time; save
+  it as `../_secrets/app-store-connect-api-key.p8` or pass its path.
+- `--app-store-issuer-id` / `APP_STORE_CONNECT_ISSUER_ID`: only needed for a
+  team API key. Copy it from the App Store Connect API keys page. Leave it
+  unset for an Individual API Key.
+- `--app-store-app-id` / `APP_STORE_APP_ID`: optional numeric App Store Connect
+  app ID. Open the Inkpad app in App Store Connect and copy the number from the
+  `/apps/<id>/...` URL. If omitted, the script looks up the app by bundle ID.
+- `--bundle-id` / `APP_STORE_BUNDLE_ID`: the iOS bundle identifier from the
+  Xcode Runner target or App Store Connect app information. This defaults to
+  `com.workpail.InkPad`.
+- `--metadata-locale` / `APP_STORE_CONNECT_LOCALE`: the App Store version
+  localization to update, such as `en-US`. Use the locale configured for the
+  draft version in App Store Connect.
+
 ```sh
 dart ../../publisher-dart/tool/publish_internal_ios.dart \
   --whats-new "Internal test build"
 ```
+
+Reference docs:
+
+- Google Play Developer API setup:
+  https://developers.google.com/android-publisher/getting_started
+- Google OAuth installed apps:
+  https://developers.google.com/identity/protocols/oauth2/native-app
+- App Store Connect API keys:
+  https://developer.apple.com/help/app-store-connect/get-started/app-store-connect-api/
+- Apple Developer Team ID:
+  https://developer.apple.com/help/account/manage-your-team/locate-your-team-id/
 
 ## Safety switches
 
