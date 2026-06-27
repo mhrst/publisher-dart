@@ -5,11 +5,11 @@ Dart scripts for publishing Inkpad internal Android and iOS builds.
 The package is intended to replace the internal Fastlane lanes while keeping
 the release flow explicit:
 
-- bump the Flutter build number in `inkpad_app/pubspec.yaml`
+- read the Flutter version from `inkpad_app/pubspec.yaml`
 - build the Android AAB or iOS archive
 - upload to Google Play internal testing or App Store Connect
 - optionally attach "what's new" / release notes
-- leave the bumped version in the app worktree for manual commit/tagging
+- leave version commits and tags fully manual
 
 The scripts are designed to run from `inkpad-app/inkpad_app`.
 
@@ -33,19 +33,20 @@ iOS.
 Before either platform:
 
 - make sure Flutter dependencies are installed and the app builds locally
+- manually update `inkpad_app/pubspec.yaml` to the version/build number you
+  want to publish
 - prepare release notes with `--whats-new`, `--notes-file`, or
   `--stdin-release-notes`, if needed
-- decide when you want to manually commit and tag the bumped version
+- decide when you want to manually commit and tag the release
 
-The scripts do not create commits or tags. If you want a separate commit/tag for
-each platform build, commit and tag manually after Android before starting iOS.
-If you run both first, the iOS script will bump from Android's new version and
-only the final iOS version remains in `pubspec.yaml`.
+The scripts do not change `pubspec.yaml`, create commits, or create tags. They
+use the version already in `pubspec.yaml`. If you want a separate version for
+each platform build, update, commit, and tag manually between Android and iOS.
 
-Each publisher increments the Flutter version before publishing. A fresh
-Android-then-iOS run creates two consecutive build numbers. For example, if the
-app starts at `6.5.0+6501`, Android publishes `6.5.0+6502`, then iOS publishes
-`6.5.0+6503`.
+Android and iOS can use the same `pubspec.yaml` version, but each store still
+requires a valid next build number for that platform. Google Play rejects an AAB
+whose Android version code was already uploaded, and App Store Connect rejects a
+build number that already exists for the same App Store version.
 
 ### 1. Android
 
@@ -70,15 +71,14 @@ make deploy_internal_android ARGS='--whats-new "Internal test build"'
 
 What to expect the first time:
 
-1. The script reads `pubspec.yaml` and bumps the version.
+1. The script reads the current version from `pubspec.yaml`.
 2. Flutter builds the release Android App Bundle.
 3. A browser OAuth consent flow opens. Sign in with the Google account that has
    Play Console access. The script stores the refresh token in the token cache.
 4. The AAB uploads to the Google Play internal track with the release notes, if
    provided.
-5. The bumped `pubspec.yaml` remains in the app worktree. Commit and tag it
-   manually before running iOS if you want the Android build recorded
-   separately.
+5. `pubspec.yaml` remains unchanged. Commit and tag the release manually when
+   you are ready.
 
 Later Android runs reuse the cached OAuth token. If Google does not return a
 refresh token during setup, rerun with `--force-oauth-consent`.
@@ -105,7 +105,7 @@ make deploy_internal_ios ARGS='--whats-new "Internal test build"'
 
 What to expect the first time:
 
-1. The script reads `pubspec.yaml` and bumps the version.
+1. The script reads the current version from `pubspec.yaml`.
 2. Flutter prepares the iOS project, then `xcodebuild` archives and uploads with
    the Apple account installed in Xcode. Xcode or macOS may prompt for account,
    signing, or keychain access.
@@ -115,8 +115,8 @@ What to expect the first time:
 5. The script uses the App Store Connect API key to find the app, wait for build
    processing, attach the build to the matching App Store version draft, and
    update localized what's-new text when provided.
-6. The bumped `pubspec.yaml` remains in the app worktree. Commit and tag it
-   manually after verifying the upload.
+6. `pubspec.yaml` remains unchanged. Commit and tag the release manually when
+   you are ready.
 
 Internal tester availability is controlled by the app's App Store Connect and
 TestFlight configuration. The script uploads and updates draft metadata, but it
@@ -196,4 +196,3 @@ Both scripts support:
 - `--dry-run`
 - `--skip-build`
 - `--skip-upload`
-- `--bump build|patch|minor|major`

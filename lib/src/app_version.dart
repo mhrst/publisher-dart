@@ -30,42 +30,6 @@ final class AppVersion implements Comparable<AppVersion> {
     );
   }
 
-  AppVersion bumpBuild() {
-    return AppVersion(
-      major: major,
-      minor: minor,
-      patch: patch,
-      buildNumber: buildNumber + 1,
-    );
-  }
-
-  AppVersion bumpPatch() {
-    return AppVersion(
-      major: major,
-      minor: minor,
-      patch: patch + 1,
-      buildNumber: buildNumber + 1,
-    );
-  }
-
-  AppVersion bumpMinor() {
-    return AppVersion(
-      major: major,
-      minor: minor + 1,
-      patch: 0,
-      buildNumber: buildNumber + 1,
-    );
-  }
-
-  AppVersion bumpMajor() {
-    return AppVersion(
-      major: major + 1,
-      minor: 0,
-      patch: 0,
-      buildNumber: buildNumber + 1,
-    );
-  }
-
   @override
   int compareTo(AppVersion other) {
     final segments = [

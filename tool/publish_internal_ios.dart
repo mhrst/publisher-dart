@@ -112,11 +112,6 @@ final class _IosCommand {
       help: 'Existing .xcarchive directory to use with --skip-build.',
     )
     ..addOption(
-      'bump',
-      defaultsTo: 'build',
-      allowed: ['build', 'patch', 'minor', 'major'],
-    )
-    ..addOption(
       'whats-new',
       aliases: ['release-notes'],
       help: 'App Store what\'s-new text for the draft metadata update.',
@@ -162,17 +157,8 @@ final class _IosCommand {
     );
     final archiveDirectory = _archiveDirectory(args, context);
 
-    final versionFile = VersionFile(context.pubspecFile);
-    final bump = VersionBump.parse(args.option('bump')!);
-    final currentVersion = versionFile.read();
-    final nextVersion = _nextVersion(currentVersion, bump);
-
-    if (dryRun) {
-      stdout.writeln('Would bump $currentVersion -> $nextVersion.');
-    } else {
-      versionFile.write(nextVersion);
-      stdout.writeln('Bumped $currentVersion -> $nextVersion.');
-    }
+    final version = VersionFile(context.pubspecFile).read();
+    stdout.writeln('Using app version $version.');
 
     final releaseNotes = await _resolveReleaseNotes(args);
     final whatsNew = releaseNotes?.forAppStoreVersion();
@@ -184,7 +170,7 @@ final class _IosCommand {
     );
 
     if (!args.flag('skip-build')) {
-      await publisher.buildArchive(version: nextVersion);
+      await publisher.buildArchive(version: version);
     } else if (!dryRun && !archiveDirectory.existsSync()) {
       throw FileSystemException(
         'Missing iOS archive directory. Pass --archive or run without --skip-build.',
@@ -210,7 +196,7 @@ final class _IosCommand {
         await _updateAppStoreDraft(
           args: args,
           context: context,
-          version: nextVersion,
+          version: version,
           whatsNew: args.flag('skip-app-store-notes') ? null : whatsNew,
           dryRun: dryRun,
         );
@@ -249,15 +235,6 @@ final class _IosCommand {
     }
     return ReleaseNotes.fromValue(args.option('whats-new')) ??
         await ReleaseNotes.fromFile(args.option('notes-file'));
-  }
-
-  AppVersion _nextVersion(AppVersion current, VersionBump bump) {
-    return switch (bump) {
-      VersionBump.build => current.bumpBuild(),
-      VersionBump.patch => current.bumpPatch(),
-      VersionBump.minor => current.bumpMinor(),
-      VersionBump.major => current.bumpMajor(),
-    };
   }
 
   Future<void> _updateAppStoreDraft({

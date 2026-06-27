@@ -12,15 +12,16 @@ void main() {
     expect(version.buildName, '6.5.0');
   });
 
-  test('bumps build without changing build name', () {
-    final version = AppVersion.parse('6.5.0+6501').bumpBuild();
+  test('formats Flutter version', () {
+    final version = AppVersion.parse('6.5.0+6501');
 
-    expect(version.toString(), '6.5.0+6502');
+    expect(version.toString(), '6.5.0+6501');
   });
 
-  test('bumps patch and build number together', () {
-    final version = AppVersion.parse('6.5.0+6501').bumpPatch();
+  test('compares build numbers after build name segments', () {
+    final older = AppVersion.parse('6.5.0+6501');
+    final newer = AppVersion.parse('6.5.0+6502');
 
-    expect(version.toString(), '6.5.1+6502');
+    expect(older.compareTo(newer), isNegative);
   });
 }

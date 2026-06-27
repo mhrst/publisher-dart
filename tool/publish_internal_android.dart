@@ -63,11 +63,6 @@ final class _AndroidCommand {
     )
     ..addOption('track', defaultsTo: 'internal')
     ..addOption(
-      'bump',
-      defaultsTo: 'build',
-      allowed: ['build', 'patch', 'minor', 'major'],
-    )
-    ..addOption(
       'whats-new',
       aliases: ['release-notes'],
       help: 'Release notes / what\'s-new text.',
@@ -105,17 +100,8 @@ final class _AndroidCommand {
       appDirectory: Directory(args.option('app-dir')!),
     );
 
-    final versionFile = VersionFile(context.pubspecFile);
-    final bump = VersionBump.parse(args.option('bump')!);
-    final currentVersion = versionFile.read();
-    final nextVersion = _nextVersion(currentVersion, bump);
-
-    if (dryRun) {
-      stdout.writeln('Would bump $currentVersion -> $nextVersion.');
-    } else {
-      versionFile.write(nextVersion);
-      stdout.writeln('Bumped $currentVersion -> $nextVersion.');
-    }
+    final version = VersionFile(context.pubspecFile).read();
+    stdout.writeln('Using app version $version.');
 
     final releaseNotes = await _resolveReleaseNotes(args);
 
@@ -161,7 +147,7 @@ final class _AndroidCommand {
           appBundleFile: context.androidReleaseBundle,
           packageName: args.option('package-name')!,
           trackName: args.option('track')!,
-        ).publish(version: nextVersion, releaseNotes: releaseNotes);
+        ).publish(version: version, releaseNotes: releaseNotes);
         stdout.writeln('Uploaded Android version code $versionCode.');
       }
     } else {
@@ -214,15 +200,6 @@ final class _AndroidCommand {
       throw FormatException('Expected a non-negative integer.', value);
     }
     return parsed;
-  }
-
-  AppVersion _nextVersion(AppVersion current, VersionBump bump) {
-    return switch (bump) {
-      VersionBump.build => current.bumpBuild(),
-      VersionBump.patch => current.bumpPatch(),
-      VersionBump.minor => current.bumpMinor(),
-      VersionBump.major => current.bumpMajor(),
-    };
   }
 }
 
