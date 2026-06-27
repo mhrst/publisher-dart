@@ -25,6 +25,100 @@ make deploy_internal_android ARGS='--whats-new "Internal test build"'
 make deploy_internal_ios ARGS='--whats-new "Internal test build"'
 ```
 
+## Fresh release flow
+
+Run from `inkpad-app/inkpad_app`. The expected order is Android first, then
+iOS.
+
+Before either platform:
+
+- make sure Flutter dependencies are installed and the app builds locally
+- start from a clean `inkpad-app` worktree unless using `--allow-dirty` or
+  `--skip-git`
+- decide whether to push immediately; `--push` pushes the generated commit and
+  tag, while omitting it leaves them local
+- prepare release notes with `--whats-new`, `--notes-file`, or
+  `--stdin-release-notes`, if needed
+
+Each publisher increments the Flutter version before publishing. A fresh
+Android-then-iOS run creates two consecutive build numbers. For example, if the
+app starts at `6.5.0+6501`, Android publishes and tags `6.5.0+6502`, then iOS
+publishes and tags `6.5.0+6503`.
+
+### 1. Android
+
+Prerequisites:
+
+- Google Play Console access for `com.workpail.inkpad.notepad.notes` with
+  release rights to the internal track
+- an installed-app OAuth client JSON at
+  `../_secrets/google-play-oauth-client.json`, or a path passed with
+  `--oauth-client` / `GOOGLE_PLAY_OAUTH_CLIENT`
+- a writable token cache path at
+  `../_secrets/google-play-oauth-token.json`, or a path passed with
+  `--oauth-token` / `GOOGLE_PLAY_OAUTH_TOKEN`
+- Android signing configuration available to Gradle so Flutter can produce the
+  release AAB
+
+Fresh run:
+
+```sh
+make deploy_internal_android ARGS='--whats-new "Internal test build" --push'
+```
+
+What to expect the first time:
+
+1. The script validates git state, reads `pubspec.yaml`, and bumps the version.
+2. Flutter builds the release Android App Bundle.
+3. A browser OAuth consent flow opens. Sign in with the Google account that has
+   Play Console access. The script stores the refresh token in the token cache.
+4. The AAB uploads to the Google Play internal track with the release notes, if
+   provided.
+5. The script commits the version bump and creates an `internal/android/v...`
+   tag. With `--push`, it pushes the commit and tag.
+
+Later Android runs reuse the cached OAuth token. If Google does not return a
+refresh token during setup, rerun with `--force-oauth-consent`.
+
+### 2. iOS
+
+Prerequisites:
+
+- Xcode installed and signed in under Xcode > Settings > Accounts with an Apple
+  Developer account that can sign and upload Inkpad
+- App Store Connect access for `com.workpail.InkPad`
+- an App Store Connect API key for draft metadata updates, with the key ID in
+  `--app-store-key-id` / `APP_STORE_CONNECT_KEY_ID`
+- the API private key at `../_secrets/app-store-connect-api-key.p8`, or a path
+  passed with `--app-store-private-key` /
+  `APP_STORE_CONNECT_PRIVATE_KEY`
+- signing and provisioning configured so `xcodebuild archive` can complete
+
+Fresh run:
+
+```sh
+make deploy_internal_ios ARGS='--whats-new "Internal test build" --push'
+```
+
+What to expect the first time:
+
+1. The script validates git state, reads `pubspec.yaml`, and bumps the version.
+2. Flutter prepares the iOS project, then `xcodebuild` archives and uploads with
+   the Apple account installed in Xcode. Xcode or macOS may prompt for account,
+   signing, or keychain access.
+3. The upload is App Store distribution eligible and is not submitted for
+   review.
+4. The script uploads Crashlytics dSYMs unless symbol upload is skipped.
+5. The script uses the App Store Connect API key to find the app, wait for build
+   processing, attach the build to the matching App Store version draft, and
+   update localized what's-new text when provided.
+6. The script commits the version bump and creates an `internal/ios/v...` tag.
+   With `--push`, it pushes the commit and tag.
+
+Internal tester availability is controlled by the app's App Store Connect and
+TestFlight configuration. The script uploads and updates draft metadata, but it
+does not submit the app for review.
+
 ## Android
 
 Android uses the Google Play Developer API directly through `googleapis` and
