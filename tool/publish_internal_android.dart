@@ -84,6 +84,13 @@ final class _AndroidCommand {
     )
     ..addFlag('skip-build', negatable: false)
     ..addFlag('skip-upload', negatable: false)
+    ..addFlag(
+      'only-release-notes',
+      negatable: false,
+      help:
+          'Only update Google Play release notes for the current pubspec.yaml '
+          'build number.',
+    )
     ..addFlag('dry-run', negatable: false)
     ..addFlag('help', abbr: 'h', negatable: false);
 
@@ -93,6 +100,7 @@ final class _AndroidCommand {
       stdout.writeln(_usage);
       return;
     }
+    _validateMode(args);
 
     final dryRun = args.flag('dry-run');
     final runner = ProcessRunner(dryRun: dryRun);
@@ -104,6 +112,50 @@ final class _AndroidCommand {
     stdout.writeln('Using app version $version.');
 
     final releaseNotes = await _resolveReleaseNotes(args);
+
+    if (args.flag('only-release-notes')) {
+      final requiredReleaseNotes = _requireReleaseNotes(releaseNotes);
+      final oauthClientPath = _optionOrEnv(
+        args,
+        'oauth-client',
+        'GOOGLE_PLAY_OAUTH_CLIENT',
+        context.androidOAuthClientFile.path,
+      );
+      final oauthTokenPath = _optionOrEnv(
+        args,
+        'oauth-token',
+        'GOOGLE_PLAY_OAUTH_TOKEN',
+        context.androidOAuthTokenFile.path,
+      );
+      if (dryRun) {
+        requiredReleaseNotes.forGooglePlay();
+        stdout.writeln(
+          'Would update Google Play ${args.option('track')} release notes for '
+          'version code ${version.buildNumber} using OAuth client '
+          '$oauthClientPath and token cache $oauthTokenPath.',
+        );
+      } else {
+        final versionCode =
+            await AndroidInternalPublisher(
+              oauthCredentials: AndroidUserOAuthCredentials(
+                clientSecretsFile: File(oauthClientPath),
+                tokenStoreFile: File(oauthTokenPath),
+                listenPort: _nonNegativeInt(args.option('oauth-port')!),
+                forceConsent: args.flag('force-oauth-consent'),
+              ),
+              appBundleFile: context.androidReleaseBundle,
+              packageName: args.option('package-name')!,
+              trackName: args.option('track')!,
+            ).updateReleaseNotes(
+              version: version,
+              releaseNotes: requiredReleaseNotes,
+            );
+        stdout.writeln(
+          'Updated Android release notes for version code $versionCode.',
+        );
+      }
+      return;
+    }
 
     if (!args.flag('skip-build')) {
       await runner.run('flutter', const [
@@ -157,6 +209,15 @@ final class _AndroidCommand {
 
   String get _usage => '$_usageHeader\n${_parser.usage}';
 
+  void _validateMode(ArgResults args) {
+    if (args.flag('only-release-notes') && args.flag('skip-upload')) {
+      throw _UsageError(
+        'Use either --only-release-notes or --skip-upload, not both.',
+        _usage,
+      );
+    }
+  }
+
   Future<ReleaseNotes?> _resolveReleaseNotes(ArgResults args) async {
     final sources = [
       if (args.option('whats-new') != null) '--whats-new',
@@ -175,6 +236,17 @@ final class _AndroidCommand {
     }
     return ReleaseNotes.fromValue(args.option('whats-new')) ??
         await ReleaseNotes.fromFile(args.option('notes-file'));
+  }
+
+  ReleaseNotes _requireReleaseNotes(ReleaseNotes? releaseNotes) {
+    if (releaseNotes == null) {
+      throw _UsageError(
+        '--only-release-notes requires --whats-new, --notes-file, or '
+        '--stdin-release-notes.',
+        _usage,
+      );
+    }
+    return releaseNotes;
   }
 
   String _optionOrEnv(

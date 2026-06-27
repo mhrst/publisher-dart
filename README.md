@@ -87,6 +87,17 @@ Android release notes are committed as part of the same Google Play edit that
 assigns the uploaded AAB to the internal track. If that edit fails before
 commit, fix the issue and rerun the Android publisher.
 
+If the internal release is already committed and only the release notes are
+wrong, retry only that metadata update:
+
+```sh
+make deploy_internal_android ARGS='--only-release-notes --whats-new "Corrected notes"'
+```
+
+That retry reads the current `pubspec.yaml` build number, finds the matching
+release on the Google Play track, replaces its `en-US` release notes, and
+commits the Play edit. It does not build or upload an AAB.
+
 ### 2. iOS
 
 Prerequisites:
@@ -184,6 +195,14 @@ dart ../../publisher-dart/tool/publish_internal_android.dart \
   --whats-new "Internal test build"
 ```
 
+Retry only Google Play release notes after a successful upload:
+
+```sh
+dart ../../publisher-dart/tool/publish_internal_android.dart \
+  --only-release-notes \
+  --whats-new "Corrected notes"
+```
+
 ## iOS
 
 iOS builds an App Store Connect archive and uploads it with `xcodebuild` using
@@ -277,6 +296,10 @@ Both scripts support:
 - `--dry-run`
 - `--skip-build`
 - `--skip-upload`
+
+Android also supports:
+
+- `--only-release-notes`
 
 iOS also supports:
 

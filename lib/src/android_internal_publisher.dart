@@ -17,14 +17,17 @@ final class AndroidInternalPublisher {
   final String packageName;
   final String trackName;
   final void Function(String line) log;
+  final Future<http.Client> Function({required List<String> scopes})
+  _createClient;
 
-  const AndroidInternalPublisher({
+  AndroidInternalPublisher({
     required this.oauthCredentials,
     required this.appBundleFile,
     required this.packageName,
     this.trackName = 'internal',
     this.log = print,
-  });
+    Future<http.Client> Function({required List<String> scopes})? createClient,
+  }) : _createClient = createClient ?? oauthCredentials.createClient;
 
   Future<int> publish({
     required AppVersion version,
@@ -32,18 +35,11 @@ final class AndroidInternalPublisher {
   }) async {
     _requireFile(appBundleFile, 'Android app bundle');
 
-    final client = await oauthCredentials.createClient(
-      scopes: const [AndroidPublisherApi.androidpublisherScope],
-    );
+    final client = await _createGooglePlayClient();
 
     try {
       final api = AndroidPublisherApi(client);
-      log('Opening Google Play edit for $packageName.');
-      final edit = await api.edits.insert(AppEdit(), packageName);
-      final editId = edit.id;
-      if (editId == null || editId.isEmpty) {
-        throw StateError('Google Play did not return an edit id.');
-      }
+      final editId = await _openEdit(api);
 
       log('Uploading ${appBundleFile.path}.');
       final bundle = await api.edits.bundles.upload(
@@ -68,11 +64,7 @@ final class AndroidInternalPublisher {
 
       final notes = releaseNotes?.forGooglePlay();
       if (notes != null) {
-        release.releaseNotes = [
-          LocalizedText()
-            ..language = 'en-US'
-            ..text = notes,
-        ];
+        release.releaseNotes = _localizedReleaseNotes(notes);
       }
 
       await api.edits.tracks.update(
@@ -84,12 +76,87 @@ final class AndroidInternalPublisher {
         trackName,
       );
 
-      log('Committing Google Play edit $editId.');
-      await api.edits.commit(packageName, editId);
+      await _commitEdit(api, editId);
       return versionCode;
     } finally {
       client.close();
     }
+  }
+
+  Future<int> updateReleaseNotes({
+    required AppVersion version,
+    required ReleaseNotes releaseNotes,
+  }) async {
+    final versionCode = version.buildNumber.toString();
+    final notes = releaseNotes.forGooglePlay();
+    final client = await _createGooglePlayClient();
+
+    try {
+      final api = AndroidPublisherApi(client);
+      final editId = await _openEdit(api);
+
+      log('Loading Google Play $trackName track.');
+      final track = await api.edits.tracks.get(packageName, editId, trackName);
+      final release = _releaseForVersionCode(track, versionCode);
+      release.releaseNotes = _localizedReleaseNotes(notes);
+
+      log(
+        'Updating release notes for version code $versionCode on $trackName.',
+      );
+      await api.edits.tracks.update(track, packageName, editId, trackName);
+      await _commitEdit(api, editId);
+      return version.buildNumber;
+    } finally {
+      client.close();
+    }
+  }
+
+  Future<http.Client> _createGooglePlayClient() {
+    return _createClient(
+      scopes: const [AndroidPublisherApi.androidpublisherScope],
+    );
+  }
+
+  Future<String> _openEdit(AndroidPublisherApi api) async {
+    log('Opening Google Play edit for $packageName.');
+    final edit = await api.edits.insert(AppEdit(), packageName);
+    final editId = edit.id;
+    if (editId == null || editId.isEmpty) {
+      throw StateError('Google Play did not return an edit id.');
+    }
+    return editId;
+  }
+
+  Future<void> _commitEdit(AndroidPublisherApi api, String editId) async {
+    log('Committing Google Play edit $editId.');
+    await api.edits.commit(packageName, editId);
+  }
+
+  TrackRelease _releaseForVersionCode(Track track, String versionCode) {
+    final releases = track.releases;
+    if (releases == null || releases.isEmpty) {
+      throw StateError('Google Play $trackName track has no releases.');
+    }
+
+    for (final release in releases) {
+      if (release.versionCodes?.contains(versionCode) ?? false) {
+        return release;
+      }
+    }
+
+    throw StateError(
+      'Google Play $trackName track has no release for version code '
+      '$versionCode. Confirm pubspec.yaml build number matches the uploaded '
+      'Android version code.',
+    );
+  }
+
+  List<LocalizedText> _localizedReleaseNotes(String notes) {
+    return [
+      LocalizedText()
+        ..language = 'en-US'
+        ..text = notes,
+    ];
   }
 
   void _requireFile(File file, String label) {
