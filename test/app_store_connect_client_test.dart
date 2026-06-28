@@ -87,14 +87,14 @@ void main() {
       appId: null,
       bundleId: 'com.workpail.InkPad',
       version: AppVersion.parse('6.5.0+6502'),
-      whatsNew: 'Internal build',
-      locale: 'en-US',
+      whatsNewByLocale: {'en-US': 'Internal build'},
     );
 
     expect(result.appId, 'app-123');
     expect(result.buildId, 'build-123');
     expect(result.appStoreVersionId, 'version-123');
     expect(result.localizationId, 'localization-123');
+    expect(result.localizationIdsByLocale, {'en-US': 'localization-123'});
 
     final appLookup = requests[0];
     expect(
@@ -191,8 +191,7 @@ void main() {
       appId: 'app-123',
       bundleId: 'com.workpail.InkPad',
       version: AppVersion.parse('6.5.0+6502'),
-      whatsNew: 'Internal build',
-      locale: 'en-US',
+      whatsNewByLocale: {'en-US': 'Internal build'},
     );
 
     expect(paths, [
@@ -203,6 +202,126 @@ void main() {
       'GET /v1/appStoreVersions/version-123/appStoreVersionLocalizations',
       'POST /v1/appStoreVersionLocalizations',
       'PATCH /v1/appStoreVersionLocalizations/localization-123',
+    ]);
+  });
+
+  test('updates multiple App Store localizations', () async {
+    final updateBodies = <Object?>[];
+    Object? createLocalizationBody;
+    final client = AppStoreConnectClient(
+      tokenProvider: const _FakeTokenProvider(),
+      httpClient: MockClient((request) async {
+        return switch ((request.method, request.url.path)) {
+          ('GET', '/v1/builds') => _jsonResponse({
+            'data': [
+              {
+                'type': 'builds',
+                'id': 'build-123',
+                'attributes': {'processingState': 'VALID'},
+              },
+            ],
+          }),
+          ('GET', '/v1/apps/app-123/appStoreVersions') => _jsonResponse({
+            'data': [
+              {
+                'type': 'appStoreVersions',
+                'id': 'version-123',
+                'attributes': {'versionString': '6.5.0'},
+              },
+            ],
+          }),
+          ('PATCH', '/v1/appStoreVersions/version-123/relationships/build') =>
+            http.Response('', 204),
+          (
+            'GET',
+            '/v1/appStoreVersions/version-123/appStoreVersionLocalizations',
+          ) =>
+            request.url.queryParameters['filter[locale]'] == 'en-US'
+                ? _jsonResponse({
+                    'data': [
+                      {
+                        'type': 'appStoreVersionLocalizations',
+                        'id': 'localization-en',
+                        'attributes': {'locale': 'en-US'},
+                      },
+                    ],
+                  })
+                : _jsonResponse({'data': <Object>[]}),
+          ('POST', '/v1/appStoreVersionLocalizations') => () {
+            createLocalizationBody = jsonDecode(request.body);
+            return _jsonResponse({
+              'data': {
+                'type': 'appStoreVersionLocalizations',
+                'id': 'localization-es',
+                'attributes': {'locale': 'es-MX'},
+              },
+            }, statusCode: 201);
+          }(),
+          ('PATCH', '/v1/appStoreVersionLocalizations/localization-en') => () {
+            updateBodies.add(jsonDecode(request.body));
+            return _jsonResponse({
+              'data': {
+                'type': 'appStoreVersionLocalizations',
+                'id': 'localization-en',
+              },
+            });
+          }(),
+          ('PATCH', '/v1/appStoreVersionLocalizations/localization-es') => () {
+            updateBodies.add(jsonDecode(request.body));
+            return _jsonResponse({
+              'data': {
+                'type': 'appStoreVersionLocalizations',
+                'id': 'localization-es',
+              },
+            });
+          }(),
+          _ => http.Response(
+            'unexpected ${request.method} ${request.url}',
+            500,
+          ),
+        };
+      }),
+      delay: (_) async {},
+      log: (_) {},
+    );
+
+    final result = await client.updateDraftSubmission(
+      appId: 'app-123',
+      bundleId: 'com.workpail.InkPad',
+      version: AppVersion.parse('6.5.0+6502'),
+      whatsNewByLocale: {'es-MX': 'Notas internas', 'en-US': 'Internal notes'},
+    );
+
+    expect(result.localizationIdsByLocale, {
+      'en-US': 'localization-en',
+      'es-MX': 'localization-es',
+    });
+    expect(createLocalizationBody, {
+      'data': {
+        'type': 'appStoreVersionLocalizations',
+        'attributes': {'locale': 'es-MX', 'whatsNew': 'Notas internas'},
+        'relationships': {
+          'appStoreVersion': {
+            'data': {'type': 'appStoreVersions', 'id': 'version-123'},
+          },
+        },
+      },
+    });
+    expect(updateBodies, [
+      {
+        'data': {
+          'type': 'appStoreVersionLocalizations',
+          'id': 'localization-en',
+          'attributes': {'whatsNew': 'Internal notes'},
+        },
+      },
+      {
+        'data': {
+          'type': 'appStoreVersionLocalizations',
+          'id': 'localization-es',
+          'attributes': {'whatsNew': 'Notas internas'},
+        },
+      },
     ]);
   });
 

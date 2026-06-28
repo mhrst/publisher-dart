@@ -83,7 +83,10 @@ void main() {
 
     final versionCode = await publisher.updateReleaseNotes(
       version: AppVersion.parse('6.5.0+6502'),
-      releaseNotes: ReleaseNotes.fromValue('Corrected notes')!,
+      releaseNotes: ReleaseNotes.fromYaml('''
+en-US: Corrected notes
+es-419, es-MX: Notas corregidas
+''')!,
     );
 
     expect(versionCode, 6502);
@@ -108,6 +111,7 @@ void main() {
           'name': '6.5.0+6502',
           'releaseNotes': [
             {'language': 'en-US', 'text': 'Corrected notes'},
+            {'language': 'es-419', 'text': 'Notas corregidas'},
           ],
           'status': 'completed',
           'versionCodes': ['6502'],

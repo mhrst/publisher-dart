@@ -81,8 +81,7 @@ final class AppStoreConnectClient {
     required String bundleId,
     required String? appId,
     required AppVersion version,
-    required String? whatsNew,
-    required String locale,
+    required Map<String, String> whatsNewByLocale,
     Duration buildPollTimeout = const Duration(minutes: 30),
     Duration buildPollInterval = const Duration(seconds: 30),
   }) async {
@@ -100,21 +99,30 @@ final class AppStoreConnectClient {
 
     await attachBuild(appStoreVersionId: appStoreVersion.id, buildId: build.id);
 
-    AppStoreVersionLocalization? localization;
-    if (whatsNew != null && whatsNew.isNotEmpty) {
-      localization = await findOrCreateLocalization(
+    final localizationIdsByLocale = <String, String>{};
+    final whatsNewEntries =
+        whatsNewByLocale.entries
+            .where((entry) => entry.value.isNotEmpty)
+            .toList()
+          ..sort((a, b) => a.key.compareTo(b.key));
+    for (final entry in whatsNewEntries) {
+      final localization = await findOrCreateLocalization(
         appStoreVersionId: appStoreVersion.id,
-        locale: locale,
-        whatsNew: whatsNew,
+        locale: entry.key,
+        whatsNew: entry.value,
       );
-      await updateWhatsNew(localizationId: localization.id, whatsNew: whatsNew);
+      await updateWhatsNew(
+        localizationId: localization.id,
+        whatsNew: entry.value,
+      );
+      localizationIdsByLocale[entry.key] = localization.id;
     }
 
     return AppStoreDraftUpdateResult(
       appId: resolvedAppId,
       buildId: build.id,
       appStoreVersionId: appStoreVersion.id,
-      localizationId: localization?.id,
+      localizationIdsByLocale: localizationIdsByLocale,
     );
   }
 
@@ -542,14 +550,21 @@ final class AppStoreDraftUpdateResult {
   final String appId;
   final String buildId;
   final String appStoreVersionId;
-  final String? localizationId;
+  final Map<String, String> localizationIdsByLocale;
 
   const AppStoreDraftUpdateResult({
     required this.appId,
     required this.buildId,
     required this.appStoreVersionId,
-    required this.localizationId,
+    this.localizationIdsByLocale = const {},
   });
+
+  String? get localizationId {
+    if (localizationIdsByLocale.length != 1) {
+      return null;
+    }
+    return localizationIdsByLocale.values.single;
+  }
 }
 
 Map<String, Object?> _attributes(Map<String, Object?> resource) {

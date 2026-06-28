@@ -63,7 +63,7 @@ final class AndroidInternalPublisher {
         ..versionCodes = ['$versionCode'];
 
       final notes = releaseNotes?.forGooglePlay();
-      if (notes != null) {
+      if (notes != null && notes.isNotEmpty) {
         release.releaseNotes = _localizedReleaseNotes(notes);
       }
 
@@ -151,11 +151,14 @@ final class AndroidInternalPublisher {
     );
   }
 
-  List<LocalizedText> _localizedReleaseNotes(String notes) {
+  List<LocalizedText> _localizedReleaseNotes(Map<String, String> notes) {
+    final entries = notes.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
     return [
-      LocalizedText()
-        ..language = 'en-US'
-        ..text = notes,
+      for (final entry in entries)
+        LocalizedText()
+          ..language = entry.key
+          ..text = entry.value,
     ];
   }
 

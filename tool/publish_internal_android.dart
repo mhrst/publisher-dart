@@ -62,15 +62,13 @@ final class _AndroidCommand {
       help: 'Localhost callback port for first-time OAuth consent.',
     )
     ..addOption('track', defaultsTo: 'internal')
-    ..addOption(
-      'whats-new',
-      aliases: ['release-notes'],
-      help: 'Release notes / what\'s-new text.',
-    )
+    ..addOption('release-notes', help: 'Google Play release notes text.')
     ..addOption(
       'notes-file',
       aliases: ['release-notes-file'],
-      help: 'File containing release notes / what\'s-new text.',
+      help:
+          'Plain text file or localized .yaml/.yml file containing release '
+          'notes.',
     )
     ..addFlag(
       'stdin-release-notes',
@@ -220,7 +218,7 @@ final class _AndroidCommand {
 
   Future<ReleaseNotes?> _resolveReleaseNotes(ArgResults args) async {
     final sources = [
-      if (args.option('whats-new') != null) '--whats-new',
+      if (args.option('release-notes') != null) '--release-notes',
       if (args.option('notes-file') != null) '--notes-file',
       if (args.flag('stdin-release-notes')) '--stdin-release-notes',
     ];
@@ -234,14 +232,14 @@ final class _AndroidCommand {
     if (args.flag('stdin-release-notes')) {
       return ReleaseNotes.fromStdin();
     }
-    return ReleaseNotes.fromValue(args.option('whats-new')) ??
+    return ReleaseNotes.fromValue(args.option('release-notes')) ??
         await ReleaseNotes.fromFile(args.option('notes-file'));
   }
 
   ReleaseNotes _requireReleaseNotes(ReleaseNotes? releaseNotes) {
     if (releaseNotes == null) {
       throw _UsageError(
-        '--only-release-notes requires --whats-new, --notes-file, or '
+        '--only-release-notes requires --release-notes, --notes-file, or '
         '--stdin-release-notes.',
         _usage,
       );

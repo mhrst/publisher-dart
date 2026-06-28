@@ -94,7 +94,8 @@ final class _IosCommand {
     ..addOption(
       'metadata-locale',
       help:
-          'App Store version localization to update. Defaults to en-US or '
+          'App Store version localization to update for plain-text notes or '
+          'the YAML default fallback. Defaults to en-US or '
           'APP_STORE_CONNECT_LOCALE.',
     )
     ..addOption(
@@ -113,27 +114,28 @@ final class _IosCommand {
     )
     ..addOption(
       'whats-new',
-      aliases: ['release-notes'],
       help: 'App Store what\'s-new text for the draft metadata update.',
     )
     ..addOption(
       'notes-file',
       aliases: ['release-notes-file'],
-      help: 'File containing App Store what\'s-new text.',
+      help:
+          'Plain text file or localized .yaml/.yml file containing App Store '
+          'what\'s-new text.',
     )
     ..addFlag(
       'stdin-release-notes',
       negatable: false,
-      help: 'Read release notes from stdin.',
+      help: 'Read App Store what\'s-new text from stdin.',
     )
     ..addFlag('skip-build', negatable: false)
     ..addFlag('skip-upload', negatable: false)
     ..addFlag(
-      'only-app-store-metadata',
+      'only-whats-new',
       negatable: false,
       help:
-          'Only update App Store Connect draft build linkage and metadata for '
-          'the current pubspec.yaml version.',
+          'Only update App Store what\'s-new text for the current '
+          'pubspec.yaml version.',
     )
     ..addFlag(
       'skip-app-store-metadata',
@@ -168,14 +170,14 @@ final class _IosCommand {
     stdout.writeln('Using app version $version.');
 
     final releaseNotes = await _resolveReleaseNotes(args);
-    final whatsNew = releaseNotes?.forAppStoreVersion();
 
-    if (args.flag('only-app-store-metadata')) {
-      await _updateAppStoreDraft(
+    if (args.flag('only-whats-new')) {
+      final requiredWhatsNew = _requireWhatsNew(releaseNotes);
+      await _updateAppStoreWhatsNew(
         args: args,
         context: context,
         version: version,
-        whatsNew: args.flag('skip-app-store-notes') ? null : whatsNew,
+        releaseNotes: requiredWhatsNew,
         dryRun: dryRun,
       );
       return;
@@ -217,7 +219,8 @@ final class _IosCommand {
           args: args,
           context: context,
           version: version,
-          whatsNew: args.flag('skip-app-store-notes') ? null : whatsNew,
+          releaseNotes: releaseNotes,
+          updateWhatsNew: !args.flag('skip-app-store-notes'),
           dryRun: dryRun,
         );
       }
@@ -230,11 +233,9 @@ final class _IosCommand {
   String get _usage => '$_usageHeader\n${_parser.usage}';
 
   void _validateMode(ArgResults args) {
-    if (args.flag('only-app-store-metadata') &&
-        args.flag('skip-app-store-metadata')) {
+    if (args.flag('only-whats-new') && args.flag('skip-app-store-notes')) {
       throw _UsageError(
-        'Use either --only-app-store-metadata or --skip-app-store-metadata, '
-        'not both.',
+        'Use either --only-whats-new or --skip-app-store-notes, not both.',
         _usage,
       );
     }
@@ -256,7 +257,7 @@ final class _IosCommand {
     ];
     if (sources.length > 1) {
       throw _UsageError(
-        'Use only one release-notes source: ${sources.join(', ')}.',
+        'Use only one what\'s-new source: ${sources.join(', ')}.',
         _usage,
       );
     }
@@ -268,11 +269,22 @@ final class _IosCommand {
         await ReleaseNotes.fromFile(args.option('notes-file'));
   }
 
-  Future<void> _updateAppStoreDraft({
+  ReleaseNotes _requireWhatsNew(ReleaseNotes? releaseNotes) {
+    if (releaseNotes == null) {
+      throw _UsageError(
+        '--only-whats-new requires --whats-new, --notes-file, or '
+        '--stdin-release-notes.',
+        _usage,
+      );
+    }
+    return releaseNotes;
+  }
+
+  Future<void> _updateAppStoreWhatsNew({
     required ArgResults args,
     required PublishContext context,
     required AppVersion version,
-    required String? whatsNew,
+    required ReleaseNotes releaseNotes,
     required bool dryRun,
   }) async {
     final appId = _optionOrEnv(args, 'app-store-app-id', 'APP_STORE_APP_ID');
@@ -282,6 +294,76 @@ final class _IosCommand {
     final locale =
         _optionOrEnv(args, 'metadata-locale', 'APP_STORE_CONNECT_LOCALE') ??
         _defaultMetadataLocale;
+    final whatsNewByLocale = releaseNotes.forAppStoreVersion(
+      defaultLocale: locale,
+    );
+
+    if (dryRun) {
+      stdout.writeln(
+        'Would update App Store what\'s-new metadata for '
+        '${_localeList(whatsNewByLocale.keys)} on version '
+        '${version.buildName}.',
+      );
+      return;
+    }
+
+    final client = AppStoreConnectClient(
+      tokenProvider: _appStoreConnectCredentials(args, context),
+    );
+    try {
+      final resolvedAppId = await client.resolveAppId(
+        appId: appId,
+        bundleId: bundleId,
+      );
+      final appStoreVersion = await client.findOrCreateAppStoreVersion(
+        appId: resolvedAppId,
+        versionString: version.buildName,
+      );
+      final localizationIdsByLocale = <String, String>{};
+      final entries = whatsNewByLocale.entries.toList()
+        ..sort((a, b) => a.key.compareTo(b.key));
+      for (final entry in entries) {
+        final localization = await client.findOrCreateLocalization(
+          appStoreVersionId: appStoreVersion.id,
+          locale: entry.key,
+          whatsNew: entry.value,
+        );
+        await client.updateWhatsNew(
+          localizationId: localization.id,
+          whatsNew: entry.value,
+        );
+        localizationIdsByLocale[entry.key] = localization.id;
+      }
+      for (final entry in localizationIdsByLocale.entries) {
+        stdout.writeln(
+          'Updated ${entry.key} App Store what\'s-new metadata '
+          '(${entry.value}).',
+        );
+      }
+    } finally {
+      client.close();
+    }
+  }
+
+  Future<void> _updateAppStoreDraft({
+    required ArgResults args,
+    required PublishContext context,
+    required AppVersion version,
+    required ReleaseNotes? releaseNotes,
+    required bool updateWhatsNew,
+    required bool dryRun,
+  }) async {
+    final appId = _optionOrEnv(args, 'app-store-app-id', 'APP_STORE_APP_ID');
+    final bundleId =
+        _optionOrEnv(args, 'bundle-id', 'APP_STORE_BUNDLE_ID') ??
+        _defaultBundleId;
+    final locale =
+        _optionOrEnv(args, 'metadata-locale', 'APP_STORE_CONNECT_LOCALE') ??
+        _defaultMetadataLocale;
+    final whatsNewByLocale = updateWhatsNew
+        ? releaseNotes?.forAppStoreVersion(defaultLocale: locale) ??
+              const <String, String>{}
+        : const <String, String>{};
     final buildPollTimeout = _durationOption(args, 'build-poll-timeout');
     final buildPollInterval = _durationOption(args, 'build-poll-interval');
 
@@ -298,8 +380,11 @@ final class _IosCommand {
         'Would attach the processed build to App Store version '
         '${version.buildName}.',
       );
-      if (whatsNew != null) {
-        stdout.writeln('Would update $locale App Store what\'s-new metadata.');
+      if (whatsNewByLocale.isNotEmpty) {
+        stdout.writeln(
+          'Would update App Store what\'s-new metadata for '
+          '${_localeList(whatsNewByLocale.keys)}.',
+        );
       }
       return;
     }
@@ -312,8 +397,7 @@ final class _IosCommand {
         appId: appId,
         bundleId: bundleId,
         version: version,
-        whatsNew: whatsNew,
-        locale: locale,
+        whatsNewByLocale: whatsNewByLocale,
         buildPollTimeout: buildPollTimeout,
         buildPollInterval: buildPollInterval,
       );
@@ -321,10 +405,10 @@ final class _IosCommand {
         'Updated App Store draft ${result.appStoreVersionId} with build '
         '${result.buildId}.',
       );
-      if (result.localizationId != null) {
+      for (final entry in result.localizationIdsByLocale.entries) {
         stdout.writeln(
-          'Updated $locale App Store what\'s-new metadata '
-          '(${result.localizationId}).',
+          'Updated ${entry.key} App Store what\'s-new metadata '
+          '(${entry.value}).',
         );
       }
     } finally {
@@ -373,6 +457,11 @@ final class _IosCommand {
       );
     }
     return Duration(seconds: seconds);
+  }
+
+  String _localeList(Iterable<String> locales) {
+    final sorted = locales.toList()..sort();
+    return sorted.join(', ');
   }
 
   String _requiredOptionOrEnv(

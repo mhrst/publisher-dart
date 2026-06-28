@@ -14,14 +14,14 @@ the release flow explicit:
 The scripts are designed to run from `inkpad-app/inkpad_app`.
 
 ```sh
-dart ../../publisher-dart/tool/publish_internal_android.dart --whats-new "Internal test build"
+dart ../../publisher-dart/tool/publish_internal_android.dart --release-notes "Internal test build"
 dart ../../publisher-dart/tool/publish_internal_ios.dart --whats-new "Internal test build"
 ```
 
 The app Makefile forwards `ARGS` to these scripts:
 
 ```sh
-make deploy_internal_android ARGS='--whats-new "Internal test build"'
+make deploy_internal_android ARGS='--release-notes "Internal test build"'
 make deploy_internal_ios ARGS='--whats-new "Internal test build"'
 ```
 
@@ -35,8 +35,9 @@ Before either platform:
 - make sure Flutter dependencies are installed and the app builds locally
 - manually update `inkpad_app/pubspec.yaml` to the version/build number you
   want to publish
-- prepare release notes with `--whats-new`, `--notes-file`, or
-  `--stdin-release-notes`, if needed
+- prepare release notes with Android `--release-notes`, iOS `--whats-new`,
+  `--notes-file`, or `--stdin-release-notes`, if needed. Use a `.yaml`
+  `--notes-file` for localized release notes.
 - decide when you want to manually commit and tag the release
 
 The scripts do not change `pubspec.yaml`, create commits, or create tags. They
@@ -47,6 +48,30 @@ Android and iOS can use the same `pubspec.yaml` version, but each store still
 requires a valid next build number for that platform. Google Play rejects an AAB
 whose Android version code was already uploaded, and App Store Connect rejects a
 build number that already exists for the same App Store version.
+
+### Localized release notes
+
+Android `--release-notes`, iOS `--whats-new`, and `--stdin-release-notes`
+still provide one plain-text note. Android sends that note as `en-US`; iOS
+sends it to `--metadata-locale`, which defaults to `en-US`.
+
+For per-language notes, pass a `.yaml` file with `--notes-file`:
+
+```yaml
+default: |
+  Internal test build.
+en-US: |
+  Internal test build.
+es-419, es-MX: |
+  Version interna de prueba.
+zh-CN, zh-Hans: |
+  Internal test build.
+```
+
+Use a single locale key when both stores use the same code, such as `en-US`.
+When the stores differ, use `android-locale, ios-locale`, such as
+`es-419, es-MX` or `zh-CN, zh-Hans`. The script validates iOS locales against
+the supported App Store locale list before making API calls.
 
 ### 1. Android
 
@@ -66,7 +91,7 @@ Prerequisites:
 Fresh run:
 
 ```sh
-make deploy_internal_android ARGS='--whats-new "Internal test build"'
+make deploy_internal_android ARGS='--release-notes "Internal test build"'
 ```
 
 What to expect the first time:
@@ -91,12 +116,12 @@ If the internal release is already committed and only the release notes are
 wrong, retry only that metadata update:
 
 ```sh
-make deploy_internal_android ARGS='--only-release-notes --whats-new "Corrected notes"'
+make deploy_internal_android ARGS='--only-release-notes --release-notes "Corrected notes"'
 ```
 
 That retry reads the current `pubspec.yaml` build number, finds the matching
-release on the Google Play track, replaces its `en-US` release notes, and
-commits the Play edit. It does not build or upload an AAB.
+release on the Google Play track, replaces the specified localized release
+notes, and commits the Play edit. It does not build or upload an AAB.
 
 ### 2. iOS
 
@@ -137,17 +162,17 @@ Internal tester availability is controlled by the app's App Store Connect and
 TestFlight configuration. The script uploads and updates draft metadata, but it
 does not submit the app for review.
 
-If the upload succeeds but App Store Connect draft metadata or what's-new update
-fails, retry only that step:
+If the upload succeeds but the App Store what's-new update fails, retry only
+that step:
 
 ```sh
-make deploy_internal_ios ARGS='--only-app-store-metadata --whats-new "Internal test build"'
+make deploy_internal_ios ARGS='--only-whats-new --whats-new "Internal test build"'
 ```
 
-That retry reads the current `pubspec.yaml` version, waits for the already
-uploaded App Store eligible build, attaches it to the matching App Store version
-draft, and updates localized what's-new text when provided. It does not build,
-upload, export an IPA, or upload Crashlytics symbols.
+That retry reads the current `pubspec.yaml` version, finds or creates the
+matching App Store version draft, and updates localized what's-new text. It
+does not build, upload, export an IPA, attach a build, or upload Crashlytics
+symbols.
 
 ## Android
 
@@ -192,7 +217,7 @@ Useful options:
 
 ```sh
 dart ../../publisher-dart/tool/publish_internal_android.dart \
-  --whats-new "Internal test build"
+  --release-notes "Internal test build"
 ```
 
 Retry only Google Play release notes after a successful upload:
@@ -200,7 +225,7 @@ Retry only Google Play release notes after a successful upload:
 ```sh
 dart ../../publisher-dart/tool/publish_internal_android.dart \
   --only-release-notes \
-  --whats-new "Corrected notes"
+  --release-notes "Corrected notes"
 ```
 
 ## iOS
@@ -235,7 +260,8 @@ Optional metadata settings:
 - `--app-store-app-id` or `APP_STORE_APP_ID`; otherwise the app is found by
   bundle ID
 - `--bundle-id` or `APP_STORE_BUNDLE_ID`; defaults to `com.workpail.InkPad`
-- `--metadata-locale` or `APP_STORE_CONNECT_LOCALE`; defaults to `en-US`
+- `--metadata-locale` or `APP_STORE_CONNECT_LOCALE`; defaults to `en-US` and is
+  used for plain-text notes or the YAML `default` fallback
 
 Where to get iOS values:
 
@@ -262,19 +288,19 @@ Where to get iOS values:
   Xcode Runner target or App Store Connect app information. This defaults to
   `com.workpail.InkPad`.
 - `--metadata-locale` / `APP_STORE_CONNECT_LOCALE`: the App Store version
-  localization to update, such as `en-US`. Use the locale configured for the
-  draft version in App Store Connect.
+  localization to update for plain-text notes or the YAML `default` fallback,
+  such as `en-US`. Explicit paired YAML entries use their iOS locale key.
 
 ```sh
 dart ../../publisher-dart/tool/publish_internal_ios.dart \
   --whats-new "Internal test build"
 ```
 
-Retry only App Store draft metadata after a successful upload:
+Retry only App Store what's-new text after a successful upload:
 
 ```sh
 dart ../../publisher-dart/tool/publish_internal_ios.dart \
-  --only-app-store-metadata \
+  --only-whats-new \
   --whats-new "Internal test build"
 ```
 
@@ -303,4 +329,4 @@ Android also supports:
 
 iOS also supports:
 
-- `--only-app-store-metadata`
+- `--only-whats-new`
