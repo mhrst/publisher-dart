@@ -5,24 +5,23 @@ import 'dart:io';
 import 'package:args/args.dart';
 import 'package:publisher_dart/publisher_dart.dart';
 
-const _defaultTeamId = 'TUPCVWUMEF';
-const _defaultBundleId = 'com.workpail.InkPad';
-const _defaultMetadataLocale = 'en-US';
+const _defaultWhatsNewLocale = 'en-US';
 const _defaultBuildPollTimeoutSeconds = '1800';
 const _defaultBuildPollIntervalSeconds = '30';
 
 const _usageHeader = '''
-Publishes an Inkpad iOS build to App Store Connect.
+Publishes a Flutter iOS build to App Store Connect.
 
-Run from inkpad-app/inkpad_app:
-  dart ../../publisher-dart/tool/publish_internal_ios.dart [options]
+Run from a Flutter app directory:
+  dart run publisher_dart:publish_internal_ios [options]
 
 Authentication uses the Apple Developer account already installed in Xcode.
-The account must have signing and App Store Connect upload access for Inkpad.
+The account must have signing and App Store Connect upload access for the app.
 The uploaded build remains eligible for App Store distribution, but the script
 does not submit it for review.
 
-Draft metadata uses an App Store Connect individual API key stored locally.
+What's-new metadata uses a local App Store Connect API key when what's-new text
+is provided.
 ''';
 
 Future<void> main(List<String> args) async {
@@ -59,20 +58,19 @@ final class _IosCommand {
     ..addOption('app-dir', defaultsTo: Directory.current.path)
     ..addOption(
       'team-id',
-      defaultsTo: _defaultTeamId,
-      help: 'Apple Developer team ID.',
+      help: 'Apple Developer team ID or APPLE_DEVELOPER_TEAM_ID.',
     )
     ..addOption(
       'bundle-id',
       help:
-          'App Store Connect bundle ID used to discover the app. Defaults to '
-          'com.workpail.InkPad or APP_STORE_BUNDLE_ID.',
+          'App Store Connect bundle ID or APP_STORE_BUNDLE_ID. Required '
+          'unless --app-store-app-id or APP_STORE_APP_ID is set.',
     )
     ..addOption(
       'app-store-app-id',
       help:
-          'App Store Connect app resource ID. Defaults to lookup by '
-          '--bundle-id or APP_STORE_APP_ID.',
+          'App Store Connect app resource ID or APP_STORE_APP_ID. If omitted, '
+          'the app is looked up by bundle ID.',
     )
     ..addOption(
       'app-store-key-id',
@@ -81,8 +79,7 @@ final class _IosCommand {
     ..addOption(
       'app-store-private-key',
       help:
-          'Path to the App Store Connect API .p8 key. Defaults to '
-          '../_secrets/app-store-connect-api-key.p8 or '
+          'Path to the App Store Connect API .p8 key or '
           'APP_STORE_CONNECT_PRIVATE_KEY.',
     )
     ..addOption(
@@ -92,11 +89,11 @@ final class _IosCommand {
           'key, or set APP_STORE_CONNECT_ISSUER_ID.',
     )
     ..addOption(
-      'metadata-locale',
+      'whats-new-locale',
       help:
-          'App Store version localization to update for plain-text notes or '
-          'the YAML default fallback. Defaults to en-US or '
-          'APP_STORE_CONNECT_LOCALE.',
+          'App Store localization for plain-text what\'s-new text or the YAML '
+          'default fallback. Defaults to en-US or '
+          'APP_STORE_CONNECT_WHATS_NEW_LOCALE.',
     )
     ..addOption(
       'build-poll-timeout',
@@ -112,19 +109,15 @@ final class _IosCommand {
       'archive',
       help: 'Existing .xcarchive directory to use with --skip-build.',
     )
+    ..addOption('whats-new', help: 'App Store what\'s-new text.')
     ..addOption(
-      'whats-new',
-      help: 'App Store what\'s-new text for the draft metadata update.',
-    )
-    ..addOption(
-      'notes-file',
-      aliases: ['release-notes-file'],
+      'whats-new-file',
       help:
           'Plain text file or localized .yaml/.yml file containing App Store '
           'what\'s-new text.',
     )
     ..addFlag(
-      'stdin-release-notes',
+      'whats-new-stdin',
       negatable: false,
       help: 'Read App Store what\'s-new text from stdin.',
     )
@@ -137,18 +130,6 @@ final class _IosCommand {
           'Only update App Store what\'s-new text for the current '
           'pubspec.yaml version.',
     )
-    ..addFlag(
-      'skip-app-store-metadata',
-      negatable: false,
-      help: 'Skip App Store Connect draft build linking and metadata update.',
-    )
-    ..addFlag(
-      'skip-app-store-notes',
-      aliases: ['skip-testflight-notes'],
-      negatable: false,
-      help: 'Skip updating App Store what\'s-new text.',
-    )
-    ..addFlag('skip-crashlytics-symbols', negatable: false)
     ..addFlag('dry-run', negatable: false)
     ..addFlag('help', abbr: 'h', negatable: false);
 
@@ -158,7 +139,6 @@ final class _IosCommand {
       stdout.writeln(_usage);
       return;
     }
-    _validateMode(args);
 
     final dryRun = args.flag('dry-run');
     final runner = ProcessRunner(dryRun: dryRun);
@@ -175,7 +155,6 @@ final class _IosCommand {
       final requiredWhatsNew = _requireWhatsNew(releaseNotes);
       await _updateAppStoreWhatsNew(
         args: args,
-        context: context,
         version: version,
         releaseNotes: requiredWhatsNew,
         dryRun: dryRun,
@@ -187,7 +166,7 @@ final class _IosCommand {
     final publisher = IosInternalPublisher(
       context: context,
       runner: runner,
-      teamId: args.option('team-id')!,
+      teamId: _requiredOptionOrEnv(args, 'team-id', 'APPLE_DEVELOPER_TEAM_ID'),
       archiveDirectory: archiveDirectory,
     );
 
@@ -210,17 +189,13 @@ final class _IosCommand {
         stdout.writeln('Uploaded iOS archive ${archiveDirectory.path}.');
       }
 
-      if (!args.flag('skip-crashlytics-symbols') && !args.flag('skip-build')) {
-        await publisher.uploadCrashlyticsSymbols();
-      }
+      await publisher.uploadCrashlyticsSymbols();
 
-      if (!args.flag('skip-app-store-metadata')) {
-        await _updateAppStoreDraft(
+      if (releaseNotes != null) {
+        await _updateAppStoreWhatsNewAfterUpload(
           args: args,
-          context: context,
           version: version,
           releaseNotes: releaseNotes,
-          updateWhatsNew: !args.flag('skip-app-store-notes'),
           dryRun: dryRun,
         );
       }
@@ -231,15 +206,6 @@ final class _IosCommand {
   }
 
   String get _usage => '$_usageHeader\n${_parser.usage}';
-
-  void _validateMode(ArgResults args) {
-    if (args.flag('only-whats-new') && args.flag('skip-app-store-notes')) {
-      throw _UsageError(
-        'Use either --only-whats-new or --skip-app-store-notes, not both.',
-        _usage,
-      );
-    }
-  }
 
   Directory _archiveDirectory(ArgResults args, PublishContext context) {
     final archivePath = args.option('archive')?.trim();
@@ -252,8 +218,8 @@ final class _IosCommand {
   Future<ReleaseNotes?> _resolveReleaseNotes(ArgResults args) async {
     final sources = [
       if (args.option('whats-new') != null) '--whats-new',
-      if (args.option('notes-file') != null) '--notes-file',
-      if (args.flag('stdin-release-notes')) '--stdin-release-notes',
+      if (args.option('whats-new-file') != null) '--whats-new-file',
+      if (args.flag('whats-new-stdin')) '--whats-new-stdin',
     ];
     if (sources.length > 1) {
       throw _UsageError(
@@ -262,18 +228,18 @@ final class _IosCommand {
       );
     }
 
-    if (args.flag('stdin-release-notes')) {
+    if (args.flag('whats-new-stdin')) {
       return ReleaseNotes.fromStdin();
     }
     return ReleaseNotes.fromValue(args.option('whats-new')) ??
-        await ReleaseNotes.fromFile(args.option('notes-file'));
+        await ReleaseNotes.fromFile(args.option('whats-new-file'));
   }
 
   ReleaseNotes _requireWhatsNew(ReleaseNotes? releaseNotes) {
     if (releaseNotes == null) {
       throw _UsageError(
-        '--only-whats-new requires --whats-new, --notes-file, or '
-        '--stdin-release-notes.',
+        '--only-whats-new requires --whats-new, --whats-new-file, or '
+        '--whats-new-stdin.',
         _usage,
       );
     }
@@ -282,18 +248,19 @@ final class _IosCommand {
 
   Future<void> _updateAppStoreWhatsNew({
     required ArgResults args,
-    required PublishContext context,
     required AppVersion version,
     required ReleaseNotes releaseNotes,
     required bool dryRun,
   }) async {
     final appId = _optionOrEnv(args, 'app-store-app-id', 'APP_STORE_APP_ID');
-    final bundleId =
-        _optionOrEnv(args, 'bundle-id', 'APP_STORE_BUNDLE_ID') ??
-        _defaultBundleId;
+    final bundleId = _bundleIdForLookup(args, appId);
     final locale =
-        _optionOrEnv(args, 'metadata-locale', 'APP_STORE_CONNECT_LOCALE') ??
-        _defaultMetadataLocale;
+        _optionOrEnv(
+          args,
+          'whats-new-locale',
+          'APP_STORE_CONNECT_WHATS_NEW_LOCALE',
+        ) ??
+        _defaultWhatsNewLocale;
     final whatsNewByLocale = releaseNotes.forAppStoreVersion(
       defaultLocale: locale,
     );
@@ -308,7 +275,7 @@ final class _IosCommand {
     }
 
     final client = AppStoreConnectClient(
-      tokenProvider: _appStoreConnectCredentials(args, context),
+      tokenProvider: _appStoreConnectCredentials(args),
     );
     try {
       final resolvedAppId = await client.resolveAppId(
@@ -345,31 +312,30 @@ final class _IosCommand {
     }
   }
 
-  Future<void> _updateAppStoreDraft({
+  Future<void> _updateAppStoreWhatsNewAfterUpload({
     required ArgResults args,
-    required PublishContext context,
     required AppVersion version,
-    required ReleaseNotes? releaseNotes,
-    required bool updateWhatsNew,
+    required ReleaseNotes releaseNotes,
     required bool dryRun,
   }) async {
     final appId = _optionOrEnv(args, 'app-store-app-id', 'APP_STORE_APP_ID');
-    final bundleId =
-        _optionOrEnv(args, 'bundle-id', 'APP_STORE_BUNDLE_ID') ??
-        _defaultBundleId;
+    final bundleId = _bundleIdForLookup(args, appId);
     final locale =
-        _optionOrEnv(args, 'metadata-locale', 'APP_STORE_CONNECT_LOCALE') ??
-        _defaultMetadataLocale;
-    final whatsNewByLocale = updateWhatsNew
-        ? releaseNotes?.forAppStoreVersion(defaultLocale: locale) ??
-              const <String, String>{}
-        : const <String, String>{};
+        _optionOrEnv(
+          args,
+          'whats-new-locale',
+          'APP_STORE_CONNECT_WHATS_NEW_LOCALE',
+        ) ??
+        _defaultWhatsNewLocale;
+    final whatsNewByLocale = releaseNotes.forAppStoreVersion(
+      defaultLocale: locale,
+    );
     final buildPollTimeout = _durationOption(args, 'build-poll-timeout');
     final buildPollInterval = _durationOption(args, 'build-poll-interval');
 
     if (dryRun) {
       stdout.writeln(
-        'Would update App Store Connect draft metadata for '
+        'Would update App Store what\'s-new metadata for '
         '${appId == null ? 'bundle ID $bundleId' : 'app $appId'}.',
       );
       stdout.writeln(
@@ -390,7 +356,7 @@ final class _IosCommand {
     }
 
     final client = AppStoreConnectClient(
-      tokenProvider: _appStoreConnectCredentials(args, context),
+      tokenProvider: _appStoreConnectCredentials(args),
     );
     try {
       final result = await client.updateDraftSubmission(
@@ -416,17 +382,14 @@ final class _IosCommand {
     }
   }
 
-  AppStoreConnectCredentials _appStoreConnectCredentials(
-    ArgResults args,
-    PublishContext context,
-  ) {
+  AppStoreConnectCredentials _appStoreConnectCredentials(ArgResults args) {
     return AppStoreConnectCredentials(
       keyId: _requiredOptionOrEnv(
         args,
         'app-store-key-id',
         'APP_STORE_CONNECT_KEY_ID',
       ),
-      privateKeyFile: _appStorePrivateKeyFile(args, context),
+      privateKeyFile: _appStorePrivateKeyFile(args),
       issuerId: _optionOrEnv(
         args,
         'app-store-issuer-id',
@@ -435,16 +398,28 @@ final class _IosCommand {
     );
   }
 
-  File _appStorePrivateKeyFile(ArgResults args, PublishContext context) {
-    final path = _optionOrEnv(
+  File _appStorePrivateKeyFile(ArgResults args) {
+    final path = _requiredOptionOrEnv(
       args,
       'app-store-private-key',
       'APP_STORE_CONNECT_PRIVATE_KEY',
     );
-    if (path == null) {
-      return context.iosAppStoreConnectPrivateKeyFile;
-    }
     return File(path).absolute;
+  }
+
+  String _bundleIdForLookup(ArgResults args, String? appId) {
+    final bundleId = _optionOrEnv(args, 'bundle-id', 'APP_STORE_BUNDLE_ID');
+    if (bundleId != null) {
+      return bundleId;
+    }
+    if (appId != null && appId.trim().isNotEmpty) {
+      return '';
+    }
+    throw _UsageError(
+      'Missing --bundle-id / APP_STORE_BUNDLE_ID or --app-store-app-id / '
+      'APP_STORE_APP_ID.',
+      _usage,
+    );
   }
 
   Duration _durationOption(ArgResults args, String option) {

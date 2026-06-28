@@ -27,12 +27,12 @@ void main() {
           return switch ((request.method, request.url.path)) {
             (
               'POST',
-              '/androidpublisher/v3/applications/com.workpail.inkpad.notepad.notes/edits',
+              '/androidpublisher/v3/applications/com.example.app/edits',
             ) =>
               _jsonResponse({'id': 'edit-123'}),
             (
               'GET',
-              '/androidpublisher/v3/applications/com.workpail.inkpad.notepad.notes/edits/edit-123/tracks/internal',
+              '/androidpublisher/v3/applications/com.example.app/edits/edit-123/tracks/internal',
             ) =>
               _jsonResponse({
                 'track': 'internal',
@@ -57,7 +57,7 @@ void main() {
               }),
             (
               'PUT',
-              '/androidpublisher/v3/applications/com.workpail.inkpad.notepad.notes/edits/edit-123/tracks/internal',
+              '/androidpublisher/v3/applications/com.example.app/edits/edit-123/tracks/internal',
             ) =>
               () {
                 updateTrackBody = jsonDecode(request.body);
@@ -65,7 +65,7 @@ void main() {
               }(),
             (
               'POST',
-              '/androidpublisher/v3/applications/com.workpail.inkpad.notepad.notes/edits/edit-123:commit',
+              '/androidpublisher/v3/applications/com.example.app/edits/edit-123:commit',
             ) =>
               _jsonResponse({'id': 'edit-123'}),
             _ => http.Response(
@@ -76,15 +76,16 @@ void main() {
         });
       },
       appBundleFile: File('unused.aab'),
-      packageName: 'com.workpail.inkpad.notepad.notes',
+      packageName: 'com.example.app',
       trackName: 'internal',
+      defaultReleaseNotesLocale: 'fr-FR',
       log: (_) {},
     );
 
     final versionCode = await publisher.updateReleaseNotes(
       version: AppVersion.parse('6.5.0+6502'),
       releaseNotes: ReleaseNotes.fromYaml('''
-en-US: Corrected notes
+default: Corrected notes
 es-419, es-MX: Notas corregidas
 ''')!,
     );
@@ -110,8 +111,8 @@ es-419, es-MX: Notas corregidas
         {
           'name': '6.5.0+6502',
           'releaseNotes': [
-            {'language': 'en-US', 'text': 'Corrected notes'},
             {'language': 'es-419', 'text': 'Notas corregidas'},
+            {'language': 'fr-FR', 'text': 'Corrected notes'},
           ],
           'status': 'completed',
           'versionCodes': ['6502'],

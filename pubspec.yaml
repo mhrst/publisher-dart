@@ -1,5 +1,5 @@
 name: publisher_dart
-description: Dart scripts for publishing Inkpad internal Android and iOS builds.
+description: Dart scripts for publishing Flutter internal Android and iOS builds.
 version: 0.1.0
 homepage: https://github.com/mhrst/publisher-dart
 publish_to: none

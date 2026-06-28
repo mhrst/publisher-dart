@@ -67,7 +67,7 @@ final class IosInternalPublisher {
     ], workingDirectory: context.iosDirectory.path);
 
     if (runner.dryRun) {
-      return context.defaultIosIpaFile;
+      return File(p.join(context.iosIpaDirectory.path, 'Runner.ipa'));
     }
     return _findIpaFile();
   }
@@ -277,9 +277,6 @@ final class IosInternalPublisher {
   }
 
   File _findIpaFile() {
-    if (context.defaultIosIpaFile.existsSync()) {
-      return context.defaultIosIpaFile;
-    }
     if (!context.iosIpaDirectory.existsSync()) {
       throw FileSystemException(
         'Missing iOS IPA export directory.',

@@ -22,7 +22,7 @@ void main() {
               {
                 'type': 'apps',
                 'id': 'app-123',
-                'attributes': {'bundleId': 'com.workpail.InkPad'},
+                'attributes': {'bundleId': 'com.example.app'},
               },
             ],
           }),
@@ -85,7 +85,7 @@ void main() {
 
     final result = await client.updateDraftSubmission(
       appId: null,
-      bundleId: 'com.workpail.InkPad',
+      bundleId: 'com.example.app',
       version: AppVersion.parse('6.5.0+6502'),
       whatsNewByLocale: {'en-US': 'Internal build'},
     );
@@ -99,7 +99,7 @@ void main() {
     final appLookup = requests[0];
     expect(
       appLookup.url.queryParameters['filter[bundleId]'],
-      'com.workpail.InkPad',
+      'com.example.app',
     );
 
     final buildLookup = requests[1];
@@ -189,7 +189,7 @@ void main() {
 
     await client.updateDraftSubmission(
       appId: 'app-123',
-      bundleId: 'com.workpail.InkPad',
+      bundleId: 'com.example.app',
       version: AppVersion.parse('6.5.0+6502'),
       whatsNewByLocale: {'en-US': 'Internal build'},
     );
@@ -287,7 +287,7 @@ void main() {
 
     final result = await client.updateDraftSubmission(
       appId: 'app-123',
-      bundleId: 'com.workpail.InkPad',
+      bundleId: 'com.example.app',
       version: AppVersion.parse('6.5.0+6502'),
       whatsNewByLocale: {'es-MX': 'Notas internas', 'en-US': 'Internal notes'},
     );

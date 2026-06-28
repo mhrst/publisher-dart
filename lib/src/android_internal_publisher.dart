@@ -16,6 +16,7 @@ final class AndroidInternalPublisher {
   final File appBundleFile;
   final String packageName;
   final String trackName;
+  final String defaultReleaseNotesLocale;
   final void Function(String line) log;
   final Future<http.Client> Function({required List<String> scopes})
   _createClient;
@@ -25,6 +26,7 @@ final class AndroidInternalPublisher {
     required this.appBundleFile,
     required this.packageName,
     this.trackName = 'internal',
+    this.defaultReleaseNotesLocale = ReleaseNotes.defaultGooglePlayLanguage,
     this.log = print,
     Future<http.Client> Function({required List<String> scopes})? createClient,
   }) : _createClient = createClient ?? oauthCredentials.createClient;
@@ -62,7 +64,9 @@ final class AndroidInternalPublisher {
         ..status = 'completed'
         ..versionCodes = ['$versionCode'];
 
-      final notes = releaseNotes?.forGooglePlay();
+      final notes = releaseNotes?.forGooglePlay(
+        defaultLanguage: defaultReleaseNotesLocale,
+      );
       if (notes != null && notes.isNotEmpty) {
         release.releaseNotes = _localizedReleaseNotes(notes);
       }
@@ -88,7 +92,9 @@ final class AndroidInternalPublisher {
     required ReleaseNotes releaseNotes,
   }) async {
     final versionCode = version.buildNumber.toString();
-    final notes = releaseNotes.forGooglePlay();
+    final notes = releaseNotes.forGooglePlay(
+      defaultLanguage: defaultReleaseNotesLocale,
+    );
     final client = await _createGooglePlayClient();
 
     try {

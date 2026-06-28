@@ -5,13 +5,13 @@ import 'dart:io';
 import 'package:args/args.dart';
 import 'package:publisher_dart/publisher_dart.dart';
 
-const _defaultAndroidPackageName = 'com.workpail.inkpad.notepad.notes';
+const _defaultReleaseNotesLocale = 'en-US';
 
 const _usageHeader = '''
-Publishes an Inkpad Android build to Google Play internal testing.
+Publishes a Flutter Android build to Google Play internal testing.
 
-Run from inkpad-app/inkpad_app:
-  dart ../../publisher-dart/tool/publish_internal_android.dart [options]
+Run from a Flutter app directory:
+  dart run publisher_dart:publish_internal_android [options]
 ''';
 
 Future<void> main(List<String> args) async {
@@ -48,13 +48,17 @@ final class _AndroidCommand {
     ..addOption('app-dir', defaultsTo: Directory.current.path)
     ..addOption(
       'package-name',
-      defaultsTo: _defaultAndroidPackageName,
-      help: 'Google Play package name.',
+      help: 'Google Play package name or GOOGLE_PLAY_PACKAGE_NAME.',
     )
-    ..addOption('oauth-client', help: 'Path to the Google OAuth client JSON.')
+    ..addOption(
+      'oauth-client',
+      help: 'Path to the Google OAuth client JSON or GOOGLE_PLAY_OAUTH_CLIENT.',
+    )
     ..addOption(
       'oauth-token',
-      help: 'Path to the cached Google OAuth token JSON.',
+      help:
+          'Path to the cached Google OAuth token JSON or '
+          'GOOGLE_PLAY_OAUTH_TOKEN.',
     )
     ..addOption(
       'oauth-port',
@@ -64,14 +68,20 @@ final class _AndroidCommand {
     ..addOption('track', defaultsTo: 'internal')
     ..addOption('release-notes', help: 'Google Play release notes text.')
     ..addOption(
-      'notes-file',
-      aliases: ['release-notes-file'],
+      'release-notes-file',
       help:
           'Plain text file or localized .yaml/.yml file containing release '
           'notes.',
     )
+    ..addOption(
+      'release-notes-locale',
+      help:
+          'Google Play language for plain-text release notes or the YAML '
+          'default fallback. Defaults to en-US or '
+          'GOOGLE_PLAY_RELEASE_NOTES_LOCALE.',
+    )
     ..addFlag(
-      'stdin-release-notes',
+      'release-notes-stdin',
       negatable: false,
       help: 'Read release notes from stdin.',
     )
@@ -110,23 +120,23 @@ final class _AndroidCommand {
     stdout.writeln('Using app version $version.');
 
     final releaseNotes = await _resolveReleaseNotes(args);
+    final releaseNotesLocale = _releaseNotesLocale(args);
 
     if (args.flag('only-release-notes')) {
       final requiredReleaseNotes = _requireReleaseNotes(releaseNotes);
-      final oauthClientPath = _optionOrEnv(
+      final packageName = _packageName(args);
+      final oauthClientPath = _requiredOptionOrEnv(
         args,
         'oauth-client',
         'GOOGLE_PLAY_OAUTH_CLIENT',
-        context.androidOAuthClientFile.path,
       );
-      final oauthTokenPath = _optionOrEnv(
+      final oauthTokenPath = _requiredOptionOrEnv(
         args,
         'oauth-token',
         'GOOGLE_PLAY_OAUTH_TOKEN',
-        context.androidOAuthTokenFile.path,
       );
       if (dryRun) {
-        requiredReleaseNotes.forGooglePlay();
+        requiredReleaseNotes.forGooglePlay(defaultLanguage: releaseNotesLocale);
         stdout.writeln(
           'Would update Google Play ${args.option('track')} release notes for '
           'version code ${version.buildNumber} using OAuth client '
@@ -142,8 +152,9 @@ final class _AndroidCommand {
                 forceConsent: args.flag('force-oauth-consent'),
               ),
               appBundleFile: context.androidReleaseBundle,
-              packageName: args.option('package-name')!,
+              packageName: packageName,
               trackName: args.option('track')!,
+              defaultReleaseNotesLocale: releaseNotesLocale,
             ).updateReleaseNotes(
               version: version,
               releaseNotes: requiredReleaseNotes,
@@ -167,20 +178,19 @@ final class _AndroidCommand {
     }
 
     if (!args.flag('skip-upload')) {
-      final oauthClientPath = _optionOrEnv(
+      final packageName = _packageName(args);
+      final oauthClientPath = _requiredOptionOrEnv(
         args,
         'oauth-client',
         'GOOGLE_PLAY_OAUTH_CLIENT',
-        context.androidOAuthClientFile.path,
       );
-      final oauthTokenPath = _optionOrEnv(
+      final oauthTokenPath = _requiredOptionOrEnv(
         args,
         'oauth-token',
         'GOOGLE_PLAY_OAUTH_TOKEN',
-        context.androidOAuthTokenFile.path,
       );
       if (dryRun) {
-        releaseNotes?.forGooglePlay();
+        releaseNotes?.forGooglePlay(defaultLanguage: releaseNotesLocale);
         stdout.writeln(
           'Would upload ${context.androidReleaseBundle.path} to '
           '${args.option('track')} using OAuth client $oauthClientPath '
@@ -195,8 +205,9 @@ final class _AndroidCommand {
             forceConsent: args.flag('force-oauth-consent'),
           ),
           appBundleFile: context.androidReleaseBundle,
-          packageName: args.option('package-name')!,
+          packageName: packageName,
           trackName: args.option('track')!,
+          defaultReleaseNotesLocale: releaseNotesLocale,
         ).publish(version: version, releaseNotes: releaseNotes);
         stdout.writeln('Uploaded Android version code $versionCode.');
       }
@@ -219,8 +230,8 @@ final class _AndroidCommand {
   Future<ReleaseNotes?> _resolveReleaseNotes(ArgResults args) async {
     final sources = [
       if (args.option('release-notes') != null) '--release-notes',
-      if (args.option('notes-file') != null) '--notes-file',
-      if (args.flag('stdin-release-notes')) '--stdin-release-notes',
+      if (args.option('release-notes-file') != null) '--release-notes-file',
+      if (args.flag('release-notes-stdin')) '--release-notes-stdin',
     ];
     if (sources.length > 1) {
       throw _UsageError(
@@ -229,30 +240,50 @@ final class _AndroidCommand {
       );
     }
 
-    if (args.flag('stdin-release-notes')) {
+    if (args.flag('release-notes-stdin')) {
       return ReleaseNotes.fromStdin();
     }
     return ReleaseNotes.fromValue(args.option('release-notes')) ??
-        await ReleaseNotes.fromFile(args.option('notes-file'));
+        await ReleaseNotes.fromFile(args.option('release-notes-file'));
   }
 
   ReleaseNotes _requireReleaseNotes(ReleaseNotes? releaseNotes) {
     if (releaseNotes == null) {
       throw _UsageError(
-        '--only-release-notes requires --release-notes, --notes-file, or '
-        '--stdin-release-notes.',
+        '--only-release-notes requires --release-notes, '
+        '--release-notes-file, or --release-notes-stdin.',
         _usage,
       );
     }
     return releaseNotes;
   }
 
-  String _optionOrEnv(
-    ArgResults args,
-    String option,
-    String envName,
-    String defaultValue,
-  ) {
+  String _packageName(ArgResults args) {
+    return _requiredOptionOrEnv(
+      args,
+      'package-name',
+      'GOOGLE_PLAY_PACKAGE_NAME',
+    );
+  }
+
+  String _releaseNotesLocale(ArgResults args) {
+    return _optionOrEnv(
+          args,
+          'release-notes-locale',
+          'GOOGLE_PLAY_RELEASE_NOTES_LOCALE',
+        ) ??
+        _defaultReleaseNotesLocale;
+  }
+
+  String _requiredOptionOrEnv(ArgResults args, String option, String envName) {
+    final value = _optionOrEnv(args, option, envName);
+    if (value != null) {
+      return value;
+    }
+    throw _UsageError('Missing --$option or $envName.', _usage);
+  }
+
+  String? _optionOrEnv(ArgResults args, String option, String envName) {
     final value = args.option(option)?.trim();
     if (value != null && value.isNotEmpty) {
       return value;
@@ -261,7 +292,7 @@ final class _AndroidCommand {
     if (envValue != null && envValue.isNotEmpty) {
       return envValue;
     }
-    return defaultValue;
+    return null;
   }
 
   int _nonNegativeInt(String value) {

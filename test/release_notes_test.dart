@@ -43,6 +43,17 @@ es-419, es-MX: |
     });
   });
 
+  test('uses custom fallback locales for plain text notes', () {
+    final notes = ReleaseNotes.fromValue('Internal build')!;
+
+    expect(notes.forGooglePlay(defaultLanguage: 'fr-FR'), {
+      'fr-FR': 'Internal build',
+    });
+    expect(notes.forAppStoreVersion(defaultLocale: 'fr-FR'), {
+      'fr-FR': 'Internal build',
+    });
+  });
+
   test('allows platform-specific locale code differences', () {
     final notes = ReleaseNotes.fromYaml('''
 zh-CN, zh-Hans: |

@@ -1,43 +1,110 @@
 # publisher-dart
 
-Dart scripts for publishing Inkpad internal Android and iOS builds.
+Dart scripts for publishing Flutter internal Android and iOS builds.
 
-The package is intended to replace the internal Fastlane lanes while keeping
-the release flow explicit:
+The scripts are designed to run from any Flutter app directory. By default they
+read `pubspec.yaml`, `android/`, `ios/`, and `build/` from the current working
+directory. Pass `--app-dir` only when you want to run from somewhere else.
 
-- read the Flutter version from `inkpad_app/pubspec.yaml`
+The release flow stays explicit:
+
+- read the Flutter version from the app's `pubspec.yaml`
 - build the Android AAB or iOS archive
 - upload to Google Play internal testing or App Store Connect
-- optionally attach "what's new" / release notes
+- optionally attach localized release notes
 - leave version commits and tags fully manual
 
-The scripts are designed to run from `inkpad-app/inkpad_app`.
+## Add To An App
 
-```sh
-dart ../../publisher-dart/tool/publish_internal_android.dart --release-notes "Internal test build"
-dart ../../publisher-dart/tool/publish_internal_ios.dart --whats-new "Internal test build"
+Add this package to the Flutter app that will run the publisher:
+
+```yaml
+dev_dependencies:
+  publisher_dart:
+    path: /absolute/path/to/publisher-dart
 ```
 
-The app Makefile forwards `ARGS` to these scripts:
+Then run from that app directory:
 
 ```sh
-make deploy_internal_android ARGS='--release-notes "Internal test build"'
-make deploy_internal_ios ARGS='--whats-new "Internal test build"'
+dart pub get
+dart run publisher_dart:publish_internal_android --help
+dart run publisher_dart:publish_internal_ios --help
 ```
 
-## Fresh release flow
+You can also wrap these commands in an app-local Makefile. Keep the working
+directory as the Flutter app directory so the default `--app-dir .` resolves to
+the app being published.
 
-Run from `inkpad-app/inkpad_app`. The expected order is Android first, then
-iOS.
+## Configuration
+
+App-specific values must be supplied with command options or environment
+variables. The scripts do not read credentials from a fixed sibling secrets
+directory.
+
+Android requires:
+
+- `--package-name` or `GOOGLE_PLAY_PACKAGE_NAME`
+- `--oauth-client` or `GOOGLE_PLAY_OAUTH_CLIENT`: path to the Google OAuth
+  installed-app client JSON
+- `--oauth-token` or `GOOGLE_PLAY_OAUTH_TOKEN`: writable path for the cached
+  Google OAuth token JSON
+
+Android optional settings:
+
+- `--track`: Google Play testing track API name, defaulting to `internal`
+- `--oauth-port`: localhost callback port for first-time OAuth consent,
+  defaulting to a random available port
+- `--release-notes-locale` or `GOOGLE_PLAY_RELEASE_NOTES_LOCALE`, defaulting
+  to `en-US`
+
+iOS requires:
+
+- `--team-id` or `APPLE_DEVELOPER_TEAM_ID`
+
+iOS what's-new updates also require:
+
+- `--app-store-key-id` or `APP_STORE_CONNECT_KEY_ID`
+- `--app-store-private-key` or `APP_STORE_CONNECT_PRIVATE_KEY`: path to the App
+  Store Connect API `.p8` private key
+- `--bundle-id` or `APP_STORE_BUNDLE_ID`, unless `--app-store-app-id` or
+  `APP_STORE_APP_ID` is set
+
+iOS optional what's-new settings:
+
+- `--app-store-issuer-id` or `APP_STORE_CONNECT_ISSUER_ID` for a team API key
+- `--app-store-app-id` or `APP_STORE_APP_ID` to skip bundle ID lookup
+- `--whats-new-locale` or `APP_STORE_CONNECT_WHATS_NEW_LOCALE`, defaulting to
+  `en-US`
+- `--build-poll-timeout` and `--build-poll-interval` for App Store Connect
+  build processing checks
+
+Example app-local environment:
+
+```sh
+export GOOGLE_PLAY_PACKAGE_NAME="com.example.app"
+export GOOGLE_PLAY_OAUTH_CLIENT="$HOME/.config/example/google-play-oauth-client.json"
+export GOOGLE_PLAY_OAUTH_TOKEN="$HOME/.config/example/google-play-oauth-token.json"
+export GOOGLE_PLAY_RELEASE_NOTES_LOCALE="en-US"
+
+export APPLE_DEVELOPER_TEAM_ID="ABCDE12345"
+export APP_STORE_BUNDLE_ID="com.example.app"
+export APP_STORE_CONNECT_KEY_ID="ABC123DEFG"
+export APP_STORE_CONNECT_PRIVATE_KEY="$HOME/.config/example/AuthKey_ABC123DEFG.p8"
+export APP_STORE_CONNECT_WHATS_NEW_LOCALE="en-US"
+```
+
+## Fresh Release Flow
 
 Before either platform:
 
 - make sure Flutter dependencies are installed and the app builds locally
-- manually update `inkpad_app/pubspec.yaml` to the version/build number you
-  want to publish
-- prepare release notes with Android `--release-notes`, iOS `--whats-new`,
-  `--notes-file`, or `--stdin-release-notes`, if needed. Use a `.yaml`
-  `--notes-file` for localized release notes.
+- manually update `pubspec.yaml` to the version/build number you want to
+  publish
+- prepare Android release notes with `--release-notes`,
+  `--release-notes-file`, or `--release-notes-stdin`, if needed
+- prepare iOS what's-new text with `--whats-new`, `--whats-new-file`, or
+  `--whats-new-stdin`, if needed
 - decide when you want to manually commit and tag the release
 
 The scripts do not change `pubspec.yaml`, create commits, or create tags. They
@@ -49,13 +116,15 @@ requires a valid next build number for that platform. Google Play rejects an AAB
 whose Android version code was already uploaded, and App Store Connect rejects a
 build number that already exists for the same App Store version.
 
-### Localized release notes
+## Localized Release Notes
 
-Android `--release-notes`, iOS `--whats-new`, and `--stdin-release-notes`
-still provide one plain-text note. Android sends that note as `en-US`; iOS
-sends it to `--metadata-locale`, which defaults to `en-US`.
+Android `--release-notes` / `--release-notes-stdin` and iOS `--whats-new` /
+`--whats-new-stdin` provide one plain-text note. Android sends that note as
+`--release-notes-locale`; iOS sends it to `--whats-new-locale`. Both default
+to `en-US`.
 
-For per-language notes, pass a `.yaml` file with `--notes-file`:
+For per-language notes, pass a `.yaml` file with `--release-notes-file` or
+`--whats-new-file`:
 
 ```yaml
 default: |
@@ -71,27 +140,21 @@ zh-CN, zh-Hans: |
 Use a single locale key when both stores use the same code, such as `en-US`.
 When the stores differ, use `android-locale, ios-locale`, such as
 `es-419, es-MX` or `zh-CN, zh-Hans`. The script validates iOS locales against
-the supported App Store locale list before making API calls.
+the supported App Store locale list before making API calls. YAML locale keys
+are uploaded as written; `--release-notes-locale` and `--whats-new-locale`
+only control the fallback locale for plain text notes and YAML `default:`.
 
-### 1. Android
+## Android
 
-Prerequisites:
-
-- Google Play Console access for `com.workpail.inkpad.notepad.notes` with
-  release rights to the internal track
-- an installed-app OAuth client JSON at
-  `../_secrets/google-play-oauth-client.json`, or a path passed with
-  `--oauth-client` / `GOOGLE_PLAY_OAUTH_CLIENT`
-- a writable token cache path at
-  `../_secrets/google-play-oauth-token.json`, or a path passed with
-  `--oauth-token` / `GOOGLE_PLAY_OAUTH_TOKEN`
-- Android signing configuration available to Gradle so Flutter can produce the
-  release AAB
+Android uses the Google Play Developer API directly through `googleapis` and
+`googleapis_auth`. Authentication uses an installed-app OAuth client and a
+cached user refresh token, not a service-account JSON.
 
 Fresh run:
 
 ```sh
-make deploy_internal_android ARGS='--release-notes "Internal test build"'
+dart run publisher_dart:publish_internal_android \
+  --release-notes "Internal test build"
 ```
 
 What to expect the first time:
@@ -99,48 +162,50 @@ What to expect the first time:
 1. The script reads the current version from `pubspec.yaml`.
 2. Flutter builds the release Android App Bundle.
 3. A browser OAuth consent flow opens. Sign in with the Google account that has
-   Play Console access. The script stores the refresh token in the token cache.
-4. The AAB uploads to the Google Play internal track with the release notes, if
+   Play Console access.
+4. The script stores the refresh token at `GOOGLE_PLAY_OAUTH_TOKEN` or the path
+   passed with `--oauth-token`.
+5. The AAB uploads to the configured Google Play track with release notes, if
    provided.
-5. `pubspec.yaml` remains unchanged. Commit and tag the release manually when
+6. `pubspec.yaml` remains unchanged. Commit and tag the release manually when
    you are ready.
 
 Later Android runs reuse the cached OAuth token. If Google does not return a
 refresh token during setup, rerun with `--force-oauth-consent`.
 
-Android release notes are committed as part of the same Google Play edit that
-assigns the uploaded AAB to the internal track. If that edit fails before
-commit, fix the issue and rerun the Android publisher.
-
 If the internal release is already committed and only the release notes are
 wrong, retry only that metadata update:
 
 ```sh
-make deploy_internal_android ARGS='--only-release-notes --release-notes "Corrected notes"'
+dart run publisher_dart:publish_internal_android \
+  --only-release-notes \
+  --release-notes "Corrected notes"
 ```
 
 That retry reads the current `pubspec.yaml` build number, finds the matching
 release on the Google Play track, replaces the specified localized release
 notes, and commits the Play edit. It does not build or upload an AAB.
 
-### 2. iOS
+## iOS
 
-Prerequisites:
+iOS builds an App Store Connect archive and uploads it with `xcodebuild` using
+the Apple Developer account already installed in Xcode. The account must have
+signing and App Store Connect upload access for the app. First make sure Xcode
+can see the right account under Xcode > Settings > Accounts.
 
-- Xcode installed and signed in under Xcode > Settings > Accounts with an Apple
-  Developer account that can sign and upload Inkpad
-- App Store Connect access for `com.workpail.InkPad`
-- an App Store Connect API key for draft metadata updates, with the key ID in
-  `--app-store-key-id` / `APP_STORE_CONNECT_KEY_ID`
-- the API private key at `../_secrets/app-store-connect-api-key.p8`, or a path
-  passed with `--app-store-private-key` /
-  `APP_STORE_CONNECT_PRIVATE_KEY`
-- signing and provisioning configured so `xcodebuild archive` can complete
+Uploaded builds are App Store distribution eligible and are not submitted for
+review. App Store Connect/TestFlight can still make the processed build
+available to internal testers according to the app's configured tester groups.
+
+After upload, the script uses the App Store Connect API to wait for the build
+to process, attach it to the matching App Store version draft, and update
+localized what's-new text when notes are provided.
 
 Fresh run:
 
 ```sh
-make deploy_internal_ios ARGS='--whats-new "Internal test build"'
+dart run publisher_dart:publish_internal_ios \
+  --whats-new "Internal test build"
 ```
 
 What to expect the first time:
@@ -151,22 +216,20 @@ What to expect the first time:
    signing, or keychain access.
 3. The upload is App Store distribution eligible and is not submitted for
    review.
-4. The script uploads Crashlytics dSYMs unless symbol upload is skipped.
-5. The script uses the App Store Connect API key to find the app, wait for build
-   processing, attach the build to the matching App Store version draft, and
-   update localized what's-new text when provided.
+4. The script uploads Crashlytics dSYMs.
+5. When what's-new text is provided, the script uses the App Store Connect API
+   key to find the app, wait for build processing, attach the build to the
+   matching App Store version draft, and update localized what's-new text.
 6. `pubspec.yaml` remains unchanged. Commit and tag the release manually when
    you are ready.
-
-Internal tester availability is controlled by the app's App Store Connect and
-TestFlight configuration. The script uploads and updates draft metadata, but it
-does not submit the app for review.
 
 If the upload succeeds but the App Store what's-new update fails, retry only
 that step:
 
 ```sh
-make deploy_internal_ios ARGS='--only-whats-new --whats-new "Internal test build"'
+dart run publisher_dart:publish_internal_ios \
+  --only-whats-new \
+  --whats-new "Internal test build"
 ```
 
 That retry reads the current `pubspec.yaml` version, finds or creates the
@@ -174,148 +237,7 @@ matching App Store version draft, and updates localized what's-new text. It
 does not build, upload, export an IPA, attach a build, or upload Crashlytics
 symbols.
 
-## Android
-
-Android uses the Google Play Developer API directly through `googleapis` and
-`googleapis_auth`. Authentication uses an installed-app OAuth client and a
-cached user refresh token, not a service-account JSON. Defaults match the old
-internal lane where they still apply:
-
-- package name: `com.workpail.inkpad.notepad.notes`
-- track: `internal`
-- OAuth client JSON: `../_secrets/google-play-oauth-client.json`
-- cached OAuth token: `../_secrets/google-play-oauth-token.json`
-
-The first upload opens a browser consent flow and writes the token cache.
-Later uploads refresh that token automatically. The signed-in Google account
-must have Google Play Console access for the app.
-
-OAuth paths can also be passed with options or env:
-
-- `--oauth-client` or `GOOGLE_PLAY_OAUTH_CLIENT`
-- `--oauth-token` or `GOOGLE_PLAY_OAUTH_TOKEN`
-
-Where to get Android values:
-
-- `package-name`: the Android application ID / Google Play package name. This
-  defaults to `com.workpail.inkpad.notepad.notes`.
-- `track`: the Google Play testing track API name. Internal testing is
-  `internal`.
-- `--oauth-client` / `GOOGLE_PLAY_OAUTH_CLIENT`: use the Google Cloud project
-  connected to Google Play Console API access, enable the Google Play Android
-  Developer API, then go to Google Cloud Console > APIs & Services >
-  Credentials > Create credentials > OAuth client ID > Desktop app. Download
-  the client JSON and save it as
-  `../_secrets/google-play-oauth-client.json`, or pass its path.
-- `--oauth-token` / `GOOGLE_PLAY_OAUTH_TOKEN`: choose a local path for the
-  cached user token. The script creates this file after the first browser
-  consent flow; it is not downloaded from Google.
-- browser sign-in account: use the Google account that has Play Console access
-  to the Inkpad app and permission to publish to the internal track.
-
-Useful options:
-
-```sh
-dart ../../publisher-dart/tool/publish_internal_android.dart \
-  --release-notes "Internal test build"
-```
-
-Retry only Google Play release notes after a successful upload:
-
-```sh
-dart ../../publisher-dart/tool/publish_internal_android.dart \
-  --only-release-notes \
-  --release-notes "Corrected notes"
-```
-
-## iOS
-
-iOS builds an App Store Connect archive and uploads it with `xcodebuild` using
-the Apple Developer account already installed in Xcode. The account must have
-signing and App Store Connect upload access for Inkpad. First make sure Xcode
-can see the right account under Xcode > Settings > Accounts.
-
-Uploaded builds are App Store distribution eligible and are not submitted for
-review. App Store Connect/TestFlight can still make the processed build
-available to internal testers according to the app's configured tester groups.
-
-After upload, the script uses the App Store Connect API to wait for the build
-to process, attach it to the matching App Store version draft, and optionally
-update the draft's localized what's-new text. The script does not submit the
-draft for review.
-
-Draft metadata authentication uses a local App Store Connect API key. An
-individual API key is recommended because it uses the developer's own App Store
-Connect access and does not need an issuer ID. By default, the private key is
-read from `../_secrets/app-store-connect-api-key.p8`.
-
-Required metadata credentials:
-
-- `--app-store-key-id` or `APP_STORE_CONNECT_KEY_ID`
-- `--app-store-private-key` or `APP_STORE_CONNECT_PRIVATE_KEY`
-
-Optional metadata settings:
-
-- `--app-store-issuer-id` or `APP_STORE_CONNECT_ISSUER_ID` for a team API key
-- `--app-store-app-id` or `APP_STORE_APP_ID`; otherwise the app is found by
-  bundle ID
-- `--bundle-id` or `APP_STORE_BUNDLE_ID`; defaults to `com.workpail.InkPad`
-- `--metadata-locale` or `APP_STORE_CONNECT_LOCALE`; defaults to `en-US` and is
-  used for plain-text notes or the YAML `default` fallback
-
-Where to get iOS values:
-
-- Xcode account: sign in at Xcode > Settings > Accounts with the Apple
-  Developer account that can sign and upload Inkpad.
-- `--team-id`: the Apple Developer Team ID. Find it in the Apple Developer
-  account membership details or in Xcode's account/team details. The default is
-  `TUPCVWUMEF`.
-- `--app-store-key-id` / `APP_STORE_CONNECT_KEY_ID`: in App Store Connect, open
-  your account profile / Edit Profile and create an Individual API Key. The key
-  ID is shown with the generated key. For a team key, use App Store Connect >
-  Users and Access > Integrations > App Store Connect API.
-- `--app-store-private-key` / `APP_STORE_CONNECT_PRIVATE_KEY`: the local path
-  to the `.p8` private key downloaded when creating the App Store Connect API
-  key. Apple only allows the private key to be downloaded at creation time; save
-  it as `../_secrets/app-store-connect-api-key.p8` or pass its path.
-- `--app-store-issuer-id` / `APP_STORE_CONNECT_ISSUER_ID`: only needed for a
-  team API key. Copy it from the App Store Connect API keys page. Leave it
-  unset for an Individual API Key.
-- `--app-store-app-id` / `APP_STORE_APP_ID`: optional numeric App Store Connect
-  app ID. Open the Inkpad app in App Store Connect and copy the number from the
-  `/apps/<id>/...` URL. If omitted, the script looks up the app by bundle ID.
-- `--bundle-id` / `APP_STORE_BUNDLE_ID`: the iOS bundle identifier from the
-  Xcode Runner target or App Store Connect app information. This defaults to
-  `com.workpail.InkPad`.
-- `--metadata-locale` / `APP_STORE_CONNECT_LOCALE`: the App Store version
-  localization to update for plain-text notes or the YAML `default` fallback,
-  such as `en-US`. Explicit paired YAML entries use their iOS locale key.
-
-```sh
-dart ../../publisher-dart/tool/publish_internal_ios.dart \
-  --whats-new "Internal test build"
-```
-
-Retry only App Store what's-new text after a successful upload:
-
-```sh
-dart ../../publisher-dart/tool/publish_internal_ios.dart \
-  --only-whats-new \
-  --whats-new "Internal test build"
-```
-
-Reference docs:
-
-- Google Play Developer API setup:
-  https://developers.google.com/android-publisher/getting_started
-- Google OAuth installed apps:
-  https://developers.google.com/identity/protocols/oauth2/native-app
-- App Store Connect API keys:
-  https://developer.apple.com/help/app-store-connect/get-started/app-store-connect-api/
-- Apple Developer Team ID:
-  https://developer.apple.com/help/account/manage-your-team/locate-your-team-id/
-
-## Safety switches
+## Safety Switches
 
 Both scripts support:
 
@@ -330,3 +252,14 @@ Android also supports:
 iOS also supports:
 
 - `--only-whats-new`
+
+## Reference Docs
+
+- Google Play Developer API setup:
+  https://developers.google.com/android-publisher/getting_started
+- Google OAuth installed apps:
+  https://developers.google.com/identity/protocols/oauth2/native-app
+- App Store Connect API keys:
+  https://developer.apple.com/help/app-store-connect/get-started/app-store-connect-api/
+- Apple Developer Team ID:
+  https://developer.apple.com/help/account/manage-your-team/locate-your-team-id/

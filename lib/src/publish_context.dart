@@ -12,15 +12,6 @@ final class PublishContext {
   Directory get androidDirectory =>
       Directory(p.join(appDirectory.path, 'android'));
   Directory get iosDirectory => Directory(p.join(appDirectory.path, 'ios'));
-  Directory get parentDirectory => appDirectory.parent;
-
-  File get androidOAuthClientFile => File(
-    p.join(parentDirectory.path, '_secrets', 'google-play-oauth-client.json'),
-  );
-
-  File get androidOAuthTokenFile => File(
-    p.join(parentDirectory.path, '_secrets', 'google-play-oauth-token.json'),
-  );
 
   File get androidReleaseBundle => File(
     p.join(
@@ -44,17 +35,10 @@ final class PublishContext {
     p.join(iosDirectory.path, 'Pods', 'FirebaseCrashlytics', 'upload-symbols'),
   );
 
-  File get iosAppStoreConnectPrivateKeyFile => File(
-    p.join(parentDirectory.path, '_secrets', 'app-store-connect-api-key.p8'),
-  );
-
   Directory get iosArchiveDirectory => Directory(
     p.join(appDirectory.path, 'build', 'ios', 'archive', 'Runner.xcarchive'),
   );
 
   Directory get iosIpaDirectory =>
       Directory(p.join(appDirectory.path, 'build', 'ios', 'ipa'));
-
-  File get defaultIosIpaFile =>
-      File(p.join(iosIpaDirectory.path, 'inkpad_app.ipa'));
 }
