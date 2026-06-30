@@ -38,13 +38,14 @@ the app being published.
 
 ## Configuration
 
-App-specific values must be supplied with command options or environment
+Public app-specific values are command options. Credential files, token paths,
+and the IDs tied to those credentials can be supplied with environment
 variables. The scripts do not read credentials from a fixed sibling secrets
 directory.
 
 Android requires:
 
-- `--package-name` or `GOOGLE_PLAY_PACKAGE_NAME`
+- `--package-name`
 - `--oauth-client` or `GOOGLE_PLAY_OAUTH_CLIENT`: path to the Google OAuth
   installed-app client JSON
 - `--oauth-token` or `GOOGLE_PLAY_OAUTH_TOKEN`: writable path for the cached
@@ -55,43 +56,35 @@ Android optional settings:
 - `--track`: Google Play testing track API name, defaulting to `internal`
 - `--oauth-port`: localhost callback port for first-time OAuth consent,
   defaulting to a random available port
-- `--release-notes-locale` or `GOOGLE_PLAY_RELEASE_NOTES_LOCALE`, defaulting
-  to `en-US`
+- `--release-notes-locale`, defaulting to `en-US`
 
 iOS requires:
 
-- `--team-id` or `APPLE_DEVELOPER_TEAM_ID`
+- `--team-id`
 
 iOS what's-new updates also require:
 
-- `--app-store-key-id` or `APP_STORE_CONNECT_KEY_ID`
-- `--app-store-private-key` or `APP_STORE_CONNECT_PRIVATE_KEY`: path to the App
-  Store Connect API `.p8` private key
-- `--bundle-id` or `APP_STORE_BUNDLE_ID`, unless `--app-store-app-id` or
-  `APP_STORE_APP_ID` is set
+- `APP_STORE_CONNECT_KEY_ID`
+- `APP_STORE_CONNECT_PRIVATE_KEY`: path to the App Store Connect API `.p8`
+  private key
+- `--bundle-id`, unless `--app-store-app-id` is set
 
 iOS optional what's-new settings:
 
-- `--app-store-issuer-id` or `APP_STORE_CONNECT_ISSUER_ID` for a team API key
-- `--app-store-app-id` or `APP_STORE_APP_ID` to skip bundle ID lookup
-- `--whats-new-locale` or `APP_STORE_CONNECT_WHATS_NEW_LOCALE`, defaulting to
-  `en-US`
+- `APP_STORE_CONNECT_ISSUER_ID` for a team API key
+- `--app-store-app-id` to skip bundle ID lookup
+- `--whats-new-locale`, defaulting to `en-US`
 - `--build-poll-timeout` and `--build-poll-interval` for App Store Connect
   build processing checks
 
-Example app-local environment:
+Example app-local credentials environment:
 
 ```sh
-export GOOGLE_PLAY_PACKAGE_NAME="com.example.app"
 export GOOGLE_PLAY_OAUTH_CLIENT="$HOME/.config/example/google-play-oauth-client.json"
 export GOOGLE_PLAY_OAUTH_TOKEN="$HOME/.config/example/google-play-oauth-token.json"
-export GOOGLE_PLAY_RELEASE_NOTES_LOCALE="en-US"
-
-export APPLE_DEVELOPER_TEAM_ID="ABCDE12345"
-export APP_STORE_BUNDLE_ID="com.example.app"
 export APP_STORE_CONNECT_KEY_ID="ABC123DEFG"
+export APP_STORE_CONNECT_ISSUER_ID="00000000-0000-0000-0000-000000000000"
 export APP_STORE_CONNECT_PRIVATE_KEY="$HOME/.config/example/AuthKey_ABC123DEFG.p8"
-export APP_STORE_CONNECT_WHATS_NEW_LOCALE="en-US"
 ```
 
 ## Fresh Release Flow
@@ -154,6 +147,7 @@ Fresh run:
 
 ```sh
 dart run publisher_dart:publish_internal_android \
+  --package-name com.example.app \
   --release-notes "Internal test build"
 ```
 
@@ -178,6 +172,7 @@ wrong, retry only that metadata update:
 
 ```sh
 dart run publisher_dart:publish_internal_android \
+  --package-name com.example.app \
   --only-release-notes \
   --release-notes "Corrected notes"
 ```
@@ -205,6 +200,8 @@ Fresh run:
 
 ```sh
 dart run publisher_dart:publish_internal_ios \
+  --team-id ABCDE12345 \
+  --bundle-id com.example.app \
   --whats-new "Internal test build"
 ```
 
@@ -228,6 +225,8 @@ that step:
 
 ```sh
 dart run publisher_dart:publish_internal_ios \
+  --team-id ABCDE12345 \
+  --bundle-id com.example.app \
   --only-whats-new \
   --whats-new "Internal test build"
 ```

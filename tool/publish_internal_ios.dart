@@ -56,44 +56,24 @@ Future<void> main(List<String> args) async {
 final class _IosCommand {
   late final ArgParser _parser = ArgParser()
     ..addOption('app-dir', defaultsTo: Directory.current.path)
-    ..addOption(
-      'team-id',
-      help: 'Apple Developer team ID or APPLE_DEVELOPER_TEAM_ID.',
-    )
+    ..addOption('team-id', help: 'Apple Developer team ID.')
     ..addOption(
       'bundle-id',
       help:
-          'App Store Connect bundle ID or APP_STORE_BUNDLE_ID. Required '
-          'unless --app-store-app-id or APP_STORE_APP_ID is set.',
+          'App Store Connect bundle ID. Required unless --app-store-app-id is '
+          'set.',
     )
     ..addOption(
       'app-store-app-id',
       help:
-          'App Store Connect app resource ID or APP_STORE_APP_ID. If omitted, '
-          'the app is looked up by bundle ID.',
-    )
-    ..addOption(
-      'app-store-key-id',
-      help: 'App Store Connect API key ID or APP_STORE_CONNECT_KEY_ID.',
-    )
-    ..addOption(
-      'app-store-private-key',
-      help:
-          'Path to the App Store Connect API .p8 key or '
-          'APP_STORE_CONNECT_PRIVATE_KEY.',
-    )
-    ..addOption(
-      'app-store-issuer-id',
-      help:
-          'Optional issuer ID for a team API key. Omit for an individual API '
-          'key, or set APP_STORE_CONNECT_ISSUER_ID.',
+          'App Store Connect app resource ID. If omitted, the app is looked '
+          'up by bundle ID.',
     )
     ..addOption(
       'whats-new-locale',
       help:
           'App Store localization for plain-text what\'s-new text or the YAML '
-          'default fallback. Defaults to en-US or '
-          'APP_STORE_CONNECT_WHATS_NEW_LOCALE.',
+          'default fallback. Defaults to en-US.',
     )
     ..addOption(
       'build-poll-timeout',
@@ -166,7 +146,7 @@ final class _IosCommand {
     final publisher = IosInternalPublisher(
       context: context,
       runner: runner,
-      teamId: _requiredOptionOrEnv(args, 'team-id', 'APPLE_DEVELOPER_TEAM_ID'),
+      teamId: _requiredOption(args, 'team-id'),
       archiveDirectory: archiveDirectory,
     );
 
@@ -252,15 +232,9 @@ final class _IosCommand {
     required ReleaseNotes releaseNotes,
     required bool dryRun,
   }) async {
-    final appId = _optionOrEnv(args, 'app-store-app-id', 'APP_STORE_APP_ID');
+    final appId = _option(args, 'app-store-app-id');
     final bundleId = _bundleIdForLookup(args, appId);
-    final locale =
-        _optionOrEnv(
-          args,
-          'whats-new-locale',
-          'APP_STORE_CONNECT_WHATS_NEW_LOCALE',
-        ) ??
-        _defaultWhatsNewLocale;
+    final locale = _option(args, 'whats-new-locale') ?? _defaultWhatsNewLocale;
     final whatsNewByLocale = releaseNotes.forAppStoreVersion(
       defaultLocale: locale,
     );
@@ -318,15 +292,9 @@ final class _IosCommand {
     required ReleaseNotes releaseNotes,
     required bool dryRun,
   }) async {
-    final appId = _optionOrEnv(args, 'app-store-app-id', 'APP_STORE_APP_ID');
+    final appId = _option(args, 'app-store-app-id');
     final bundleId = _bundleIdForLookup(args, appId);
-    final locale =
-        _optionOrEnv(
-          args,
-          'whats-new-locale',
-          'APP_STORE_CONNECT_WHATS_NEW_LOCALE',
-        ) ??
-        _defaultWhatsNewLocale;
+    final locale = _option(args, 'whats-new-locale') ?? _defaultWhatsNewLocale;
     final whatsNewByLocale = releaseNotes.forAppStoreVersion(
       defaultLocale: locale,
     );
@@ -384,42 +352,26 @@ final class _IosCommand {
 
   AppStoreConnectCredentials _appStoreConnectCredentials(ArgResults args) {
     return AppStoreConnectCredentials(
-      keyId: _requiredOptionOrEnv(
-        args,
-        'app-store-key-id',
-        'APP_STORE_CONNECT_KEY_ID',
-      ),
-      privateKeyFile: _appStorePrivateKeyFile(args),
-      issuerId: _optionOrEnv(
-        args,
-        'app-store-issuer-id',
-        'APP_STORE_CONNECT_ISSUER_ID',
-      ),
+      keyId: _requiredEnvironment('APP_STORE_CONNECT_KEY_ID'),
+      privateKeyFile: _appStorePrivateKeyFile(),
+      issuerId: _environment('APP_STORE_CONNECT_ISSUER_ID'),
     );
   }
 
-  File _appStorePrivateKeyFile(ArgResults args) {
-    final path = _requiredOptionOrEnv(
-      args,
-      'app-store-private-key',
-      'APP_STORE_CONNECT_PRIVATE_KEY',
-    );
+  File _appStorePrivateKeyFile() {
+    final path = _requiredEnvironment('APP_STORE_CONNECT_PRIVATE_KEY');
     return File(path).absolute;
   }
 
   String _bundleIdForLookup(ArgResults args, String? appId) {
-    final bundleId = _optionOrEnv(args, 'bundle-id', 'APP_STORE_BUNDLE_ID');
+    final bundleId = _option(args, 'bundle-id');
     if (bundleId != null) {
       return bundleId;
     }
     if (appId != null && appId.trim().isNotEmpty) {
       return '';
     }
-    throw _UsageError(
-      'Missing --bundle-id / APP_STORE_BUNDLE_ID or --app-store-app-id / '
-      'APP_STORE_APP_ID.',
-      _usage,
-    );
+    throw _UsageError('Missing --bundle-id or --app-store-app-id.', _usage);
   }
 
   Duration _durationOption(ArgResults args, String option) {
@@ -439,26 +391,34 @@ final class _IosCommand {
     return sorted.join(', ');
   }
 
-  String _requiredOptionOrEnv(
-    ArgResults args,
-    String option,
-    String environmentKey,
-  ) {
-    final value = _optionOrEnv(args, option, environmentKey);
-    if (value == null) {
-      throw _UsageError('Missing --$option or $environmentKey.', _usage);
+  String _requiredEnvironment(String environmentKey) {
+    final value = _environment(environmentKey);
+    if (value != null) {
+      return value;
     }
-    return value;
+    throw _UsageError('Missing $environmentKey.', _usage);
   }
 
-  String? _optionOrEnv(ArgResults args, String option, String environmentKey) {
+  String? _environment(String environmentKey) {
+    final value = Platform.environment[environmentKey]?.trim();
+    if (value != null && value.isNotEmpty) {
+      return value;
+    }
+    return null;
+  }
+
+  String _requiredOption(ArgResults args, String option) {
+    final value = _option(args, option);
+    if (value != null) {
+      return value;
+    }
+    throw _UsageError('Missing --$option.', _usage);
+  }
+
+  String? _option(ArgResults args, String option) {
     final optionValue = args.option(option)?.trim();
     if (optionValue != null && optionValue.isNotEmpty) {
       return optionValue;
-    }
-    final environmentValue = Platform.environment[environmentKey]?.trim();
-    if (environmentValue != null && environmentValue.isNotEmpty) {
-      return environmentValue;
     }
     return null;
   }

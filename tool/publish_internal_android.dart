@@ -46,10 +46,7 @@ Future<void> main(List<String> args) async {
 final class _AndroidCommand {
   late final ArgParser _parser = ArgParser()
     ..addOption('app-dir', defaultsTo: Directory.current.path)
-    ..addOption(
-      'package-name',
-      help: 'Google Play package name or GOOGLE_PLAY_PACKAGE_NAME.',
-    )
+    ..addOption('package-name', help: 'Google Play package name.')
     ..addOption(
       'oauth-client',
       help: 'Path to the Google OAuth client JSON or GOOGLE_PLAY_OAUTH_CLIENT.',
@@ -77,8 +74,7 @@ final class _AndroidCommand {
       'release-notes-locale',
       help:
           'Google Play language for plain-text release notes or the YAML '
-          'default fallback. Defaults to en-US or '
-          'GOOGLE_PLAY_RELEASE_NOTES_LOCALE.',
+          'default fallback. Defaults to en-US.',
     )
     ..addFlag(
       'release-notes-stdin',
@@ -259,20 +255,27 @@ final class _AndroidCommand {
   }
 
   String _packageName(ArgResults args) {
-    return _requiredOptionOrEnv(
-      args,
-      'package-name',
-      'GOOGLE_PLAY_PACKAGE_NAME',
-    );
+    return _requiredOption(args, 'package-name');
   }
 
   String _releaseNotesLocale(ArgResults args) {
-    return _optionOrEnv(
-          args,
-          'release-notes-locale',
-          'GOOGLE_PLAY_RELEASE_NOTES_LOCALE',
-        ) ??
-        _defaultReleaseNotesLocale;
+    return _option(args, 'release-notes-locale') ?? _defaultReleaseNotesLocale;
+  }
+
+  String _requiredOption(ArgResults args, String option) {
+    final value = _option(args, option);
+    if (value != null) {
+      return value;
+    }
+    throw _UsageError('Missing --$option.', _usage);
+  }
+
+  String? _option(ArgResults args, String option) {
+    final value = args.option(option)?.trim();
+    if (value != null && value.isNotEmpty) {
+      return value;
+    }
+    return null;
   }
 
   String _requiredOptionOrEnv(ArgResults args, String option, String envName) {
