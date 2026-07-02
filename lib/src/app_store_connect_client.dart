@@ -240,6 +240,7 @@ final class AppStoreConnectClient {
   Future<AppStoreVersion> findOrCreateAppStoreVersion({
     required String appId,
     required String versionString,
+    bool reuseExistingDraft = false,
   }) async {
     final response = await _getJson(
       '/v1/apps/$appId/appStoreVersions',
@@ -258,6 +259,24 @@ final class AppStoreConnectClient {
         'Using App Store version ${version.id} for ${version.versionString}.',
       );
       return version;
+    }
+
+    if (reuseExistingDraft) {
+      final draft = await findEditableDraftAppStoreVersion(appId: appId);
+      if (draft != null) {
+        if (draft.versionString == versionString) {
+          log(
+            'Using App Store version draft ${draft.id} for '
+            '${draft.versionString}.',
+          );
+          return draft;
+        }
+        return updateAppStoreVersionString(
+          appStoreVersionId: draft.id,
+          versionString: versionString,
+          previousVersionString: draft.versionString,
+        );
+      }
     }
 
     log('Creating App Store version draft $versionString.');
@@ -282,6 +301,68 @@ final class AppStoreConnectClient {
     return AppStoreVersion.fromJson(_dataObject(created));
   }
 
+  Future<AppStoreVersion?> findEditableDraftAppStoreVersion({
+    required String appId,
+  }) async {
+    final response = await _getJson(
+      '/v1/apps/$appId/appStoreVersions',
+      query: {
+        'filter[platform]': 'IOS',
+        'fields[appStoreVersions]':
+            'platform,versionString,appVersionState,appStoreState',
+        'limit': '200',
+      },
+    );
+    final versions = _dataList(response).map(AppStoreVersion.fromJson);
+    final drafts = [
+      for (final version in versions)
+        if (version.isEditableDraft) version,
+    ];
+    if (drafts.isEmpty) {
+      return null;
+    }
+    if (drafts.length > 1) {
+      throw StateError(
+        'App Store Connect returned multiple editable App Store version '
+        'drafts: ${drafts.map((draft) => draft.id).join(', ')}.',
+      );
+    }
+    return drafts.single;
+  }
+
+  Future<AppStoreVersion> updateAppStoreVersionString({
+    required String appStoreVersionId,
+    required String versionString,
+    required String? previousVersionString,
+  }) async {
+    final previous = previousVersionString == null
+        ? ''
+        : ' from $previousVersionString';
+    log(
+      'Updating App Store version draft $appStoreVersionId$previous to '
+      '$versionString.',
+    );
+    final response = await _patchJson(
+      '/v1/appStoreVersions/$appStoreVersionId',
+      body: {
+        'data': {
+          'type': 'appStoreVersions',
+          'id': appStoreVersionId,
+          'attributes': {'versionString': versionString},
+        },
+      },
+    );
+    if (response == null) {
+      return AppStoreVersion(
+        id: appStoreVersionId,
+        versionString: versionString,
+        appVersionState: null,
+        appStoreState: null,
+      );
+    }
+    return AppStoreVersion.fromJson(_dataObject(response));
+  }
+
   Future<void> attachBuild({
     required String appStoreVersionId,
     required String buildId,
@@ -300,17 +381,12 @@ final class AppStoreConnectClient {
     required String locale,
     required String whatsNew,
   }) async {
-    final response = await _getJson(
-      '/v1/appStoreVersions/$appStoreVersionId/appStoreVersionLocalizations',
-      query: {
-        'filter[locale]': locale,
-        'fields[appStoreVersionLocalizations]': 'locale,whatsNew',
-        'limit': '2',
-      },
+    final localization = await findLocalization(
+      appStoreVersionId: appStoreVersionId,
+      locale: locale,
     );
-    final localizations = _dataList(response);
-    if (localizations.isNotEmpty) {
-      return AppStoreVersionLocalization.fromJson(localizations.first);
+    if (localization != null) {
+      return localization;
     }
 
     log('Creating $locale App Store version localization.');
@@ -329,6 +405,25 @@ final class AppStoreConnectClient {
       },
     );
     return AppStoreVersionLocalization.fromJson(_dataObject(created));
+  }
+
+  Future<AppStoreVersionLocalization?> findLocalization({
+    required String appStoreVersionId,
+    required String locale,
+  }) async {
+    final response = await _getJson(
+      '/v1/appStoreVersions/$appStoreVersionId/appStoreVersionLocalizations',
+      query: {
+        'filter[locale]': locale,
+        'fields[appStoreVersionLocalizations]': 'locale,whatsNew',
+        'limit': '2',
+      },
+    );
+    final localizations = _dataList(response);
+    if (localizations.isEmpty) {
+      return null;
+    }
+    return AppStoreVersionLocalization.fromJson(localizations.first);
   }
 
   Future<void> updateWhatsNew({
@@ -514,11 +609,13 @@ final class AppStoreVersion {
   final String id;
   final String? versionString;
   final String? appVersionState;
+  final String? appStoreState;
 
   const AppStoreVersion({
     required this.id,
     required this.versionString,
     required this.appVersionState,
+    required this.appStoreState,
   });
 
   factory AppStoreVersion.fromJson(Map<String, Object?> resource) {
@@ -527,8 +624,13 @@ final class AppStoreVersion {
       id: _id(resource, 'App Store version'),
       versionString: attributes['versionString'] as String?,
       appVersionState: attributes['appVersionState'] as String?,
+      appStoreState: attributes['appStoreState'] as String?,
     );
   }
+
+  bool get isEditableDraft =>
+      appVersionState == 'PREPARE_FOR_SUBMISSION' ||
+      appStoreState == 'PREPARE_FOR_SUBMISSION';
 }
 
 final class AppStoreVersionLocalization {

@@ -205,6 +205,129 @@ void main() {
     ]);
   });
 
+  test('reuses editable draft when metadata-only version is missing', () async {
+    final paths = <String>[];
+    Object? updateVersionBody;
+    final client = AppStoreConnectClient(
+      tokenProvider: const _FakeTokenProvider(),
+      httpClient: MockClient((request) async {
+        paths.add('${request.method} ${request.url.path}');
+
+        return switch ((request.method, request.url.path)) {
+          ('GET', '/v1/apps/app-123/appStoreVersions') =>
+            request.url.queryParameters.containsKey('filter[versionString]')
+                ? _jsonResponse({'data': <Object>[]})
+                : _jsonResponse({
+                    'data': [
+                      {
+                        'type': 'appStoreVersions',
+                        'id': 'draft-123',
+                        'attributes': {
+                          'versionString': '6.4.0',
+                          'appVersionState': 'PREPARE_FOR_SUBMISSION',
+                        },
+                      },
+                    ],
+                  }),
+          ('PATCH', '/v1/appStoreVersions/draft-123') => () {
+            updateVersionBody = jsonDecode(request.body);
+            return _jsonResponse({
+              'data': {
+                'type': 'appStoreVersions',
+                'id': 'draft-123',
+                'attributes': {
+                  'versionString': '6.5.0',
+                  'appVersionState': 'PREPARE_FOR_SUBMISSION',
+                },
+              },
+            });
+          }(),
+          _ => http.Response(
+            'unexpected ${request.method} ${request.url}',
+            500,
+          ),
+        };
+      }),
+      delay: (_) async {},
+      log: (_) {},
+    );
+
+    final version = await client.findOrCreateAppStoreVersion(
+      appId: 'app-123',
+      versionString: '6.5.0',
+      reuseExistingDraft: true,
+    );
+
+    expect(version.id, 'draft-123');
+    expect(version.versionString, '6.5.0');
+    expect(paths, [
+      'GET /v1/apps/app-123/appStoreVersions',
+      'GET /v1/apps/app-123/appStoreVersions',
+      'PATCH /v1/appStoreVersions/draft-123',
+    ]);
+    expect(updateVersionBody, {
+      'data': {
+        'type': 'appStoreVersions',
+        'id': 'draft-123',
+        'attributes': {'versionString': '6.5.0'},
+      },
+    });
+  });
+
+  test(
+    'finds App Store localization without creating missing locale',
+    () async {
+      final paths = <String>[];
+      final client = AppStoreConnectClient(
+        tokenProvider: const _FakeTokenProvider(),
+        httpClient: MockClient((request) async {
+          paths.add('${request.method} ${request.url.path}');
+
+          return switch ((request.method, request.url.path)) {
+            (
+              'GET',
+              '/v1/appStoreVersions/version-123/appStoreVersionLocalizations',
+            ) =>
+              request.url.queryParameters['filter[locale]'] == 'en-US'
+                  ? _jsonResponse({
+                      'data': [
+                        {
+                          'type': 'appStoreVersionLocalizations',
+                          'id': 'localization-en',
+                          'attributes': {'locale': 'en-US'},
+                        },
+                      ],
+                    })
+                  : _jsonResponse({'data': <Object>[]}),
+            _ => http.Response(
+              'unexpected ${request.method} ${request.url}',
+              500,
+            ),
+          };
+        }),
+        delay: (_) async {},
+        log: (_) {},
+      );
+
+      final existing = await client.findLocalization(
+        appStoreVersionId: 'version-123',
+        locale: 'en-US',
+      );
+      final missing = await client.findLocalization(
+        appStoreVersionId: 'version-123',
+        locale: 'bn',
+      );
+
+      expect(existing?.id, 'localization-en');
+      expect(existing?.locale, 'en-US');
+      expect(missing, isNull);
+      expect(paths, [
+        'GET /v1/appStoreVersions/version-123/appStoreVersionLocalizations',
+        'GET /v1/appStoreVersions/version-123/appStoreVersionLocalizations',
+      ]);
+    },
+  );
+
   test('updates multiple App Store localizations', () async {
     final updateBodies = <Object?>[];
     Object? createLocalizationBody;

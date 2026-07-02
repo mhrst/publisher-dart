@@ -133,9 +133,11 @@ zh-CN, zh-Hans: |
 Use a single locale key when both stores use the same code, such as `en-US`.
 When the stores differ, use `android-locale, ios-locale`, such as
 `es-419, es-MX` or `zh-CN, zh-Hans`. The script validates iOS locales against
-the supported App Store locale list before making API calls. YAML locale keys
-are uploaded as written; `--release-notes-locale` and `--whats-new-locale`
-only control the fallback locale for plain text notes and YAML `default:`.
+the supported App Store locale list before making API calls. During
+`--only-whats-new`, iOS locales that are not already listed on the App Store
+version are skipped. YAML locale keys are uploaded as written;
+`--release-notes-locale` and `--whats-new-locale` only control the fallback
+locale for plain text notes and YAML `default:`.
 
 ## Android
 
@@ -232,9 +234,10 @@ dart run publisher_dart:publish_internal_ios \
 ```
 
 That retry reads the current `pubspec.yaml` version, finds or creates the
-matching App Store version draft, and updates localized what's-new text. It
-does not build, upload, export an IPA, attach a build, or upload Crashlytics
-symbols.
+matching App Store version draft, reusing the existing editable draft if
+needed, and updates localized what's-new text for localizations already listed
+on that draft. It does not build, upload, export an IPA, attach a build, or
+upload Crashlytics symbols.
 
 ## Safety Switches
 

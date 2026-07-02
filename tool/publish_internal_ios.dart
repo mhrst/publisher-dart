@@ -259,26 +259,46 @@ final class _IosCommand {
       final appStoreVersion = await client.findOrCreateAppStoreVersion(
         appId: resolvedAppId,
         versionString: version.buildName,
+        reuseExistingDraft: true,
       );
       final localizationIdsByLocale = <String, String>{};
       final entries = whatsNewByLocale.entries.toList()
         ..sort((a, b) => a.key.compareTo(b.key));
+      final skippedLocales = <String>[];
       for (final entry in entries) {
-        final localization = await client.findOrCreateLocalization(
+        final localization = await client.findLocalization(
           appStoreVersionId: appStoreVersion.id,
           locale: entry.key,
-          whatsNew: entry.value,
         );
+        if (localization == null) {
+          skippedLocales.add(entry.key);
+          continue;
+        }
         await client.updateWhatsNew(
           localizationId: localization.id,
           whatsNew: entry.value,
         );
         localizationIdsByLocale[entry.key] = localization.id;
       }
+      if (localizationIdsByLocale.isEmpty && entries.isNotEmpty) {
+        throw StateError(
+          'App Store version ${appStoreVersion.id} has no localizations for '
+          '${_localeList(entries.map((entry) => entry.key))}. Add those '
+          'localizations in App Store Connect or remove them from the '
+          'what\'s-new file.',
+        );
+      }
       for (final entry in localizationIdsByLocale.entries) {
         stdout.writeln(
           'Updated ${entry.key} App Store what\'s-new metadata '
           '(${entry.value}).',
+        );
+      }
+      if (skippedLocales.isNotEmpty) {
+        stdout.writeln(
+          'Skipped App Store what\'s-new metadata for '
+          '${_localeList(skippedLocales)} because the App Store version does '
+          'not list those localizations.',
         );
       }
     } finally {
