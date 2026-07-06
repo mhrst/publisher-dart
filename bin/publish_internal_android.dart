@@ -121,7 +121,7 @@ final class _AndroidCommand {
         final versionCode =
             await AndroidInternalPublisher(
               oauthCredentials: AndroidUserOAuthCredentials(
-                privateAuthFile: File(oauthTokenPath),
+                oauthTokenFile: File(oauthTokenPath),
               ),
               appBundleFile: context.androidReleaseBundle,
               packageName: packageName,
@@ -165,7 +165,7 @@ final class _AndroidCommand {
       } else {
         final versionCode = await AndroidInternalPublisher(
           oauthCredentials: AndroidUserOAuthCredentials(
-            privateAuthFile: File(oauthTokenPath),
+            oauthTokenFile: File(oauthTokenPath),
           ),
           appBundleFile: context.androidReleaseBundle,
           packageName: packageName,

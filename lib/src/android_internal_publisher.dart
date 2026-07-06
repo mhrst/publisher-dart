@@ -172,22 +172,22 @@ final class AndroidInternalPublisher {
 }
 
 final class AndroidUserOAuthCredentials {
-  final File privateAuthFile;
+  final File oauthTokenFile;
   final void Function(String line) log;
 
   const AndroidUserOAuthCredentials({
-    required this.privateAuthFile,
+    required this.oauthTokenFile,
     this.log = print,
   });
 
   Future<AutoRefreshingAuthClient> createClient({
     required List<String> scopes,
   }) async {
-    _requireFile(privateAuthFile, 'Google OAuth private auth JSON');
+    _requireFile(oauthTokenFile, 'Google OAuth token JSON');
 
     return oauth.GoogleOAuthPrivateAuthClientFactory(
-      privateAuthFile: privateAuthFile,
-      tokenLabel: 'Google OAuth private auth file',
+      oauthTokenFile: oauthTokenFile,
+      tokenLabel: 'Google OAuth token file',
       consentDescription: 'Google Play publishing',
       onMessage: log,
     ).createClient(scopes: scopes);

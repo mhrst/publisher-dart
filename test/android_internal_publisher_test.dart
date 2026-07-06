@@ -13,7 +13,7 @@ void main() {
 
     final publisher = AndroidInternalPublisher(
       oauthCredentials: AndroidUserOAuthCredentials(
-        privateAuthFile: File('unused-oauth-token.json'),
+        oauthTokenFile: File('unused-oauth-token.json'),
       ),
       createClient: ({required scopes}) async {
         expect(

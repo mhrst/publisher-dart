@@ -136,10 +136,10 @@ locale for plain text notes and YAML `default:`.
 ## Android
 
 Android uses the Google Play Developer API directly through `googleapis` and
-`googleapis_auth`. Authentication uses a private auth file created by
+`googleapis_auth`. Authentication uses an OAuth token file created by
 `oauth-dart`, not a service-account JSON.
 
-Before the first Android publish, create the private auth file with the
+Before the first Android publish, create the OAuth token file with the
 `oauth-dart` executable and request the Android Publisher scope:
 
 ```sh
@@ -161,14 +161,14 @@ What to expect the first time:
 
 1. The script reads the current version from `pubspec.yaml`.
 2. Flutter builds the release Android App Bundle.
-3. The script reads the private auth file and refreshes the access token when
+3. The script reads the OAuth token file and refreshes the access token when
    needed.
 4. The AAB uploads to the configured Google Play track with release notes, if
    provided.
 5. `pubspec.yaml` remains unchanged. Commit and tag the release manually when
    you are ready.
 
-Later Android runs reuse the private auth file. If Google does not return a
+Later Android runs reuse the OAuth token file. If Google does not return a
 refresh token during setup, rerun the `oauth-dart` executable with `--force`.
 
 If the internal release is already committed and only the release notes are
