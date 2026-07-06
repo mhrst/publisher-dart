@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:googleapis/androidpublisher/v3.dart';
@@ -173,48 +172,25 @@ final class AndroidInternalPublisher {
 }
 
 final class AndroidUserOAuthCredentials {
-  final File clientSecretsFile;
-  final File tokenStoreFile;
-  final int listenPort;
-  final bool forceConsent;
+  final File privateAuthFile;
   final void Function(String line) log;
 
   const AndroidUserOAuthCredentials({
-    required this.clientSecretsFile,
-    required this.tokenStoreFile,
-    this.listenPort = 0,
-    this.forceConsent = false,
+    required this.privateAuthFile,
     this.log = print,
   });
 
   Future<AutoRefreshingAuthClient> createClient({
     required List<String> scopes,
   }) async {
-    _requireFile(clientSecretsFile, 'Google OAuth client JSON');
+    _requireFile(privateAuthFile, 'Google OAuth private auth JSON');
 
-    final clientId = oauth.GoogleOAuthClientId.fromJson(
-      _readJsonObject(clientSecretsFile),
-    );
-
-    return oauth.GoogleOAuthClientFactory(
-      clientId: clientId,
-      tokenStoreFile: tokenStoreFile,
-      listenPort: listenPort,
-      forceConsent: forceConsent,
-      consentMode: oauth.GoogleOAuthConsentMode.offlinePkce,
-      tokenLabel: 'Google OAuth token',
+    return oauth.GoogleOAuthPrivateAuthClientFactory(
+      privateAuthFile: privateAuthFile,
+      tokenLabel: 'Google OAuth private auth file',
       consentDescription: 'Google Play publishing',
-      autoOpenBrowser: true,
       onMessage: log,
     ).createClient(scopes: scopes);
-  }
-
-  Map<String, dynamic> _readJsonObject(File file) {
-    final decoded = jsonDecode(file.readAsStringSync());
-    if (decoded is Map<String, dynamic>) {
-      return decoded;
-    }
-    throw FormatException('Expected a JSON object.', decoded);
   }
 
   void _requireFile(File file, String label) {

@@ -16,7 +16,7 @@ dependencies:
   http: ^1.6.0
   oauth_dart:
     git:
-      url: git@github.com:mhrst/common-dart.git
+      url: git@github.com:mhrst/oauth-dart.git
       ref: main
   path: ^1.9.1
   yaml: ^3.1.3

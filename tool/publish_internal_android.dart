@@ -48,19 +48,8 @@ final class _AndroidCommand {
     ..addOption('app-dir', defaultsTo: Directory.current.path)
     ..addOption('package-name', help: 'Google Play package name.')
     ..addOption(
-      'oauth-client',
-      help: 'Path to the Google OAuth client JSON or GOOGLE_PLAY_OAUTH_CLIENT.',
-    )
-    ..addOption(
       'oauth-token',
-      help:
-          'Path to the cached Google OAuth token JSON or '
-          'GOOGLE_PLAY_OAUTH_TOKEN.',
-    )
-    ..addOption(
-      'oauth-port',
-      defaultsTo: '0',
-      help: 'Localhost callback port for first-time OAuth consent.',
+      help: 'Path to the Google OAuth token JSON or GOOGLE_OAUTH_TOKEN.',
     )
     ..addOption('track', defaultsTo: 'internal')
     ..addOption('release-notes', help: 'Google Play release notes text.')
@@ -80,11 +69,6 @@ final class _AndroidCommand {
       'release-notes-stdin',
       negatable: false,
       help: 'Read release notes from stdin.',
-    )
-    ..addFlag(
-      'force-oauth-consent',
-      negatable: false,
-      help: 'Ignore the cached token and run the browser consent flow.',
     )
     ..addFlag('skip-build', negatable: false)
     ..addFlag('skip-upload', negatable: false)
@@ -121,31 +105,23 @@ final class _AndroidCommand {
     if (args.flag('only-release-notes')) {
       final requiredReleaseNotes = _requireReleaseNotes(releaseNotes);
       final packageName = _packageName(args);
-      final oauthClientPath = _requiredOptionOrEnv(
-        args,
-        'oauth-client',
-        'GOOGLE_PLAY_OAUTH_CLIENT',
-      );
       final oauthTokenPath = _requiredOptionOrEnv(
         args,
         'oauth-token',
-        'GOOGLE_PLAY_OAUTH_TOKEN',
+        'GOOGLE_OAUTH_TOKEN',
       );
       if (dryRun) {
         requiredReleaseNotes.forGooglePlay(defaultLanguage: releaseNotesLocale);
         stdout.writeln(
           'Would update Google Play ${args.option('track')} release notes for '
-          'version code ${version.buildNumber} using OAuth client '
-          '$oauthClientPath and token cache $oauthTokenPath.',
+          'version code ${version.buildNumber} using OAuth token file '
+          '$oauthTokenPath.',
         );
       } else {
         final versionCode =
             await AndroidInternalPublisher(
               oauthCredentials: AndroidUserOAuthCredentials(
-                clientSecretsFile: File(oauthClientPath),
-                tokenStoreFile: File(oauthTokenPath),
-                listenPort: _nonNegativeInt(args.option('oauth-port')!),
-                forceConsent: args.flag('force-oauth-consent'),
+                privateAuthFile: File(oauthTokenPath),
               ),
               appBundleFile: context.androidReleaseBundle,
               packageName: packageName,
@@ -175,30 +151,21 @@ final class _AndroidCommand {
 
     if (!args.flag('skip-upload')) {
       final packageName = _packageName(args);
-      final oauthClientPath = _requiredOptionOrEnv(
-        args,
-        'oauth-client',
-        'GOOGLE_PLAY_OAUTH_CLIENT',
-      );
       final oauthTokenPath = _requiredOptionOrEnv(
         args,
         'oauth-token',
-        'GOOGLE_PLAY_OAUTH_TOKEN',
+        'GOOGLE_OAUTH_TOKEN',
       );
       if (dryRun) {
         releaseNotes?.forGooglePlay(defaultLanguage: releaseNotesLocale);
         stdout.writeln(
           'Would upload ${context.androidReleaseBundle.path} to '
-          '${args.option('track')} using OAuth client $oauthClientPath '
-          'and token cache $oauthTokenPath.',
+          '${args.option('track')} using OAuth token file $oauthTokenPath.',
         );
       } else {
         final versionCode = await AndroidInternalPublisher(
           oauthCredentials: AndroidUserOAuthCredentials(
-            clientSecretsFile: File(oauthClientPath),
-            tokenStoreFile: File(oauthTokenPath),
-            listenPort: _nonNegativeInt(args.option('oauth-port')!),
-            forceConsent: args.flag('force-oauth-consent'),
+            privateAuthFile: File(oauthTokenPath),
           ),
           appBundleFile: context.androidReleaseBundle,
           packageName: packageName,
@@ -296,14 +263,6 @@ final class _AndroidCommand {
       return envValue;
     }
     return null;
-  }
-
-  int _nonNegativeInt(String value) {
-    final parsed = int.tryParse(value);
-    if (parsed == null || parsed < 0) {
-      throw FormatException('Expected a non-negative integer.', value);
-    }
-    return parsed;
   }
 }
 

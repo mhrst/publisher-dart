@@ -1,5 +1,3 @@
-export 'package:oauth_dart/oauth_dart.dart' show GoogleOAuthClientId;
-
 export 'src/android_internal_publisher.dart';
 export 'src/app_store_connect_client.dart';
 export 'src/app_version.dart';
