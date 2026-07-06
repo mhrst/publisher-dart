@@ -140,11 +140,10 @@ Android uses the Google Play Developer API directly through `googleapis` and
 `oauth-dart`, not a service-account JSON.
 
 Before the first Android publish, create the private auth file with the
-`oauth-dart` tool script and request the Android Publisher scope:
+`oauth-dart` executable and request the Android Publisher scope:
 
 ```sh
-cd /path/to/oauth-dart
-dart run tool/create_private_auth.dart \
+dart run oauth_dart:create_private_auth \
   --client-id "$HOME/.config/example/google-oauth-client.json" \
   --oauth-token "$GOOGLE_OAUTH_TOKEN" \
   --scope https://www.googleapis.com/auth/androidpublisher
@@ -170,7 +169,7 @@ What to expect the first time:
    you are ready.
 
 Later Android runs reuse the private auth file. If Google does not return a
-refresh token during setup, rerun the `oauth-dart` tool script with `--force`.
+refresh token during setup, rerun the `oauth-dart` executable with `--force`.
 
 If the internal release is already committed and only the release notes are
 wrong, retry only that metadata update:
