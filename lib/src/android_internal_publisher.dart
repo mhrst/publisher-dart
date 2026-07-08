@@ -185,7 +185,7 @@ final class AndroidUserOAuthCredentials {
   }) async {
     _requireFile(oauthTokenFile, 'Google OAuth token JSON');
 
-    return oauth.GoogleOAuthPrivateAuthClientFactory(
+    return oauth.GoogleOAuthTokenClientFactory(
       oauthTokenFile: oauthTokenFile,
       tokenLabel: 'Google OAuth token file',
       consentDescription: 'Google Play publishing',
