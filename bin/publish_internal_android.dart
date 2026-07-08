@@ -37,6 +37,9 @@ Future<void> main(List<String> args) async {
   } on ProcessException catch (error) {
     stderr.writeln(error);
     exitCode = error.errorCode == 0 ? 1 : error.errorCode;
+  } on AndroidPublisherAuthorizationRequiredException catch (error) {
+    stderr.writeln(error.message);
+    exitCode = 1;
   } on StateError catch (error) {
     stderr.writeln(error.message);
     exitCode = 1;

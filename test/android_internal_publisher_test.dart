@@ -1,12 +1,40 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:googleapis/androidpublisher/v3.dart';
+import 'package:googleapis_auth/googleapis_auth.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:oauth_dart/oauth_dart.dart';
 import 'package:publisher_dart/publisher_dart.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('AndroidUserOAuthCredentials accepts oauth-dart token file', () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'publisher_auth_test_',
+    );
+    addTearDown(() async {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+    final oauthTokenFile = File('${tempDir.path}/google_oauth_token.json');
+    await GoogleOAuthTokenClientFactory.writeOAuthToken(
+      oauthTokenFile,
+      _oauthToken(),
+    );
+    final logs = <String>[];
+
+    final client = await AndroidUserOAuthCredentials(
+      oauthTokenFile: oauthTokenFile,
+      log: logs.add,
+    ).createClient(scopes: const [AndroidPublisherApi.androidpublisherScope]);
+    addTearDown(client.close);
+
+    expect(logs.single, contains('Using Google OAuth token file'));
+  });
+
   test('updates existing Google Play release notes without uploading', () async {
     final requests = <http.Request>[];
     Object? updateTrackBody;
@@ -127,5 +155,23 @@ http.Response _jsonResponse(Object body, {int statusCode = 200}) {
     jsonEncode(body),
     statusCode,
     headers: {'content-type': 'application/json'},
+  );
+}
+
+GoogleOAuthToken _oauthToken() {
+  return GoogleOAuthToken(
+    clientId: const GoogleOAuthClientId(
+      identifier: 'client-id',
+      secret: 'client-secret',
+    ),
+    credentials: AccessCredentials(
+      AccessToken(
+        'Bearer',
+        'token',
+        DateTime.now().toUtc().add(const Duration(hours: 1)),
+      ),
+      'refresh-token',
+      const <String>[AndroidPublisherApi.androidpublisherScope],
+    ),
   );
 }

@@ -185,12 +185,19 @@ final class AndroidUserOAuthCredentials {
   }) async {
     _requireFile(oauthTokenFile, 'Google OAuth token JSON');
 
-    return oauth.GoogleOAuthTokenClientFactory(
-      oauthTokenFile: oauthTokenFile,
-      tokenLabel: 'Google OAuth token file',
-      consentDescription: 'Google Play publishing',
-      onMessage: log,
-    ).createClient(scopes: scopes);
+    try {
+      return await oauth.GoogleOAuthTokenClientFactory(
+        oauthTokenFile: oauthTokenFile,
+        tokenLabel: 'Google OAuth token file',
+        consentDescription: 'Google Play publishing',
+        onMessage: log,
+      ).createClient(scopes: scopes);
+    } on oauth.GoogleOAuthAuthorizationRequiredException catch (error) {
+      throw AndroidPublisherAuthorizationRequiredException(
+        oauthToken: error.oauthTokenPath,
+        reason: error.reason,
+      );
+    }
   }
 
   void _requireFile(File file, String label) {
@@ -198,4 +205,22 @@ final class AndroidUserOAuthCredentials {
       throw FileSystemException('Missing $label.', file.path);
     }
   }
+}
+
+final class AndroidPublisherAuthorizationRequiredException
+    implements Exception {
+  const AndroidPublisherAuthorizationRequiredException({
+    required this.oauthToken,
+    required this.reason,
+  });
+
+  final String oauthToken;
+  final String reason;
+
+  String get message =>
+      '$reason Google Play OAuth reauthorization is '
+      'required. Regenerate the OAuth token at $oauthToken, then retry.';
+
+  @override
+  String toString() => message;
 }
