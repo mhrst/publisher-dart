@@ -169,8 +169,6 @@ final class _IosCommand {
         stdout.writeln('Uploaded iOS archive ${archiveDirectory.path}.');
       }
 
-      await publisher.uploadCrashlyticsSymbols();
-
       if (releaseNotes != null) {
         await _updateAppStoreWhatsNewAfterUpload(
           args: args,

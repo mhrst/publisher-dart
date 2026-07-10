@@ -212,16 +212,15 @@ dart run publisher_dart:publish_internal_ios \
 What to expect the first time:
 
 1. The script reads the current version from `pubspec.yaml`.
-2. Flutter prepares the iOS project, then `xcodebuild` archives and uploads with
-   the Apple account installed in Xcode. Xcode or macOS may prompt for account,
-   signing, or keychain access.
-3. The upload is App Store distribution eligible and is not submitted for
-   review.
-4. The script uploads Crashlytics dSYMs.
-5. When what's-new text is provided, the script uses the App Store Connect API
+2. Flutter prepares the iOS project, then `xcodebuild` creates the archive. The
+   Runner target's Crashlytics build phase validates and uploads dSYMs.
+3. `xcodebuild` uploads with the Apple account installed in Xcode. Xcode or
+   macOS may prompt for account, signing, or keychain access. The upload is App
+   Store distribution eligible and is not submitted for review.
+4. When what's-new text is provided, the script uses the App Store Connect API
    key to find the app, wait for build processing, attach the build to the
    matching App Store version draft, and update localized what's-new text.
-6. `pubspec.yaml` remains unchanged. Commit and tag the release manually when
+5. `pubspec.yaml` remains unchanged. Commit and tag the release manually when
    you are ready.
 
 If the upload succeeds but the App Store what's-new update fails, retry only
@@ -256,6 +255,10 @@ Android also supports:
 iOS also supports:
 
 - `--only-whats-new`
+
+With iOS `--skip-build`, the publisher assumes the existing archive was built
+by the Runner target and its Crashlytics phase already handled Firebase dSYMs.
+The publisher does not upload Firebase symbols separately.
 
 ## Reference Docs
 

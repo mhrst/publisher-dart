@@ -93,43 +93,6 @@ final class IosInternalPublisher {
     ], workingDirectory: context.iosDirectory.path);
   }
 
-  Future<void> uploadCrashlyticsSymbols() async {
-    final dsymDirectory = Directory(p.join(archiveDirectory.path, 'dSYMs'));
-
-    if (!runner.dryRun) {
-      if (!context.iosCrashlyticsUploadSymbols.existsSync()) {
-        throw FileSystemException(
-          'Missing Firebase Crashlytics upload-symbols script.',
-          context.iosCrashlyticsUploadSymbols.path,
-        );
-      }
-      if (!context.iosGoogleServiceInfoFile.existsSync()) {
-        throw FileSystemException(
-          'Missing GoogleService-Info.plist.',
-          context.iosGoogleServiceInfoFile.path,
-        );
-      }
-      if (!dsymDirectory.existsSync()) {
-        throw FileSystemException(
-          'Missing archive dSYMs directory.',
-          dsymDirectory.path,
-        );
-      }
-    }
-
-    await runner.run(
-      context.iosCrashlyticsUploadSymbols.path,
-      [
-        '-gsp',
-        context.iosGoogleServiceInfoFile.path,
-        '-p',
-        'ios',
-        dsymDirectory.path,
-      ],
-      workingDirectory: context.appDirectory.path,
-    );
-  }
-
   Future<void> _cleanFlutterNativeAssetOutputs() async {
     await _deleteDirectory(
       Directory(

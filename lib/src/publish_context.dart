@@ -25,16 +25,6 @@ final class PublishContext {
     ),
   );
 
-  File get iosFirebaseAppIdFile =>
-      File(p.join(iosDirectory.path, 'firebase_app_id_file.json'));
-
-  File get iosGoogleServiceInfoFile =>
-      File(p.join(iosDirectory.path, 'Runner', 'GoogleService-Info.plist'));
-
-  File get iosCrashlyticsUploadSymbols => File(
-    p.join(iosDirectory.path, 'Pods', 'FirebaseCrashlytics', 'upload-symbols'),
-  );
-
   Directory get iosArchiveDirectory => Directory(
     p.join(appDirectory.path, 'build', 'ios', 'archive', 'Runner.xcarchive'),
   );
